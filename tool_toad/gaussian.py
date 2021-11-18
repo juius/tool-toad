@@ -2,20 +2,22 @@ from rdkit import Chem
 import os
 import numpy as np
 
+GAUXTB_CMD = '/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol'
+
 GAUSSIAN_COMMANDS = {
     'opt+freq': 'opt freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine',
     'ts_opt+freq': 'opt=(ts,calcfc,noeigentest) freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine',
     'irc_forward': 'ircmax=(forward,readfc,maxpoints=10,recalc=3) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine',
     'irc_reverse': 'ircmax=(reverse,readfc,maxpoints=10,recalc=3) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine',
-    'ts_opt_xtb': "opt=(ts,calcall,noeigentest,nomicro) external='/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol'",
-    'opt_xtb': "opt external='/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol'",
-    'freq_xtb': "freq external='/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol'",
+    'ts_opt_xtb': "opt=(ts,calcall,noeigentest,nomicro) external={GAUXTB_CMD}",
+    'opt_xtb': f"opt external={GAUXTB_CMD}",
+    'freq_xtb': f"freq external={GAUXTB_CMD}",
 }
 
 
 def write_gaussian_input_file(mol_or_chk,
                               name,
-                              command='opt freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3',
+                              command=GAUSSIAN_COMMANDS['opt+freq'],
                               dir='.',
                               mem=4,
                               cpus=4):
