@@ -1,17 +1,49 @@
 from rdkit import Chem
 import os
 import numpy as np
+from ppqm.gaussian import get_optimized_structure, get_frequencies
+from ppqm.chembridge import get_atom_int
 
 __GAUXTB_CMD__ = "/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol"
 
 GAUSSIAN_COMMANDS = {
-    "opt+freq": "opt freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine",
-    "ts_opt+freq": "opt=(ts,calcfc,noeigentest) freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine",
-    "irc_forward": "ircmax=(forward,readfc,maxpoints=10,recalc=3) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine",
-    "irc_reverse": "ircmax=(reverse,readfc,maxpoints=10,recalc=3) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol) empiricaldispersion=gd3 int=ultrafine",
-    "ts_opt_xtb": "opt=(ts,calcall,noeigentest,nomicro) external={__GAUXTB_CMD__}",
-    "opt_xtb": f"opt external={__GAUXTB_CMD__}",
-    "freq_xtb": f"freq external={__GAUXTB_CMD__}",
+    "sp": [
+        "sp b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        f"PDens=10\nPrintSpheres\n",
+    ],
+    "freq": [
+        "freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        f"PDens=10\nPrintSpheres\n",
+    ],
+    "opt+freq": [
+        "opt freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        # f"PDens=10\nPrintSpheres\n",
+        f' '
+    ],
+    "ts_opt+freq": [
+        "opt=(ts,calcfc,noeigentest) freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        # f"PDens=10\nPrintSpheres\n",
+        f' '
+    ],
+    "irc_forward": [
+        "ircmax=(forward,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        f"PDens=10\nPrintSpheres\n",
+    ],
+    "irc_reverse": [
+        "ircmax=(reverse,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        f"PDens=10\nPrintSpheres\n",
+    ],
+    "flat_irc_forward": [
+        "ircmax=(forward,LQA,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        f"PDens=10\nPrintSpheres\n",
+    ],
+    "flat_irc_reverse": [
+        "ircmax=(reverse,LQA,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
+        f"PDens=10\nPrintSpheres\n",
+    ],
+    "ts_opt_xtb": [f"opt=(ts,calcall,noeigentest,nomicro) external={__GAUXTB_CMD__}"],
+    "opt_xtb": [f"opt external={__GAUXTB_CMD__}"],
+    "freq_xtb": [f"freq external={__GAUXTB_CMD__}"],
 }
 
 
@@ -34,8 +66,7 @@ def write_gaussian_input_file(
 
     file_name = name + ".com"
     chk_file = name + ".chk"
-    link0 = f"%mem={mem}\n%nprocshared={cpus}\n%chk={chk_file}\n"
-    route = f"# {command}\n\n{name}\n\n"
+    link0 = f"%mem={mem}GB\n%nprocshared={cpus}\n%chk={chk_file}\n"
 
     if type(mol_or_chk) == Chem.rdchem.Mol:
         mol = mol_or_chk
@@ -49,7 +80,7 @@ def write_gaussian_input_file(
             raise Exception("Mol is not embedded.")
         if not conformers[0].Is3D:
             raise Exception("Mol is not 3D.")
-        route += f"{charge} {multiplicity}\n"
+        route = f"# {command[0]}\n\n{name}\n\n{charge} {multiplicity}\n"
         coords = ""
         for atom, symbol in enumerate(symbols):
             p = conformers[0].GetAtomPosition(atom)
@@ -58,20 +89,29 @@ def write_gaussian_input_file(
 
     elif type(mol_or_chk) == str and mol_or_chk[-4:] == ".chk":
         link0 += f"%oldchk={mol_or_chk}\n"
-        command += " Geom=AllCheck"
         coords = ""
-        route = f"# {command}\n\n{name}\n\n"
+        route = f"# {command[0]} Geom=AllCheck"
 
     else:
         raise Exception(f"{mol_or_chk} is not a valid input.")
 
+    # Check if command contains solvent specification
+    try:
+        scrf = command[0].split("scrf=(")[-1].split(")")[0].lower()
+    except:
+        scrf = " "
+    if "read" in scrf:
+        solvent_input = command[1]
+    else:
+        solvent_input = ""
+
     with open(os.path.join(dir, file_name), "w") as file:
-        file.write(link0 + route + coords + f"\n")
+        file.write(link0 + route + coords + f"\n" + solvent_input + f"\n")
 
     return os.path.join(dir, file_name)
 
 
-def get_gaussian_energy(out_file, e_type="scf"):
+def get_gaussian_energy(lines, e_type="scf"):
     """Reads Energy from Gaussian .out/.log file
 
     Args:
@@ -81,22 +121,71 @@ def get_gaussian_energy(out_file, e_type="scf"):
     Returns:
         float: Energy in Hartree.
     """
-    with open(out_file, "r") as ofile:
-        line = ofile.readline()
-        while line:
-            if e_type == "scf":
-                if (
-                    "Recovered energy=" in line
-                ):  # this is for externally calcualted energy
-                    energy = float(line.split("=")[1].split(" ")[1])
-                if "SCF Done:" in line:  # this is for internally calculated energy
-                    energy = float(line.split(":")[1].split("=")[1].split("A.U.")[0])
-            elif e_type == "gibbs":
-                if "Sum of electronic and thermal Free Energies=" in line:
-                    energy = float(line.split()[-1])
-            else:
-                raise Exception(
-                    f"{e_type} is not a valid option out of ['scf', 'gibbs']."
-                )
-            line = ofile.readline()
+    energy = np.nan
+    for line in lines:
+        if e_type == "scf":
+            if (
+                "Recovered energy=" in line
+            ):  # this is for externally calcualted energy
+                energy = float(line.split("=")[1].split(" ")[1])
+            if "SCF Done:" in line:  # this is for internally calculated energy
+                energy = float(line.split(":")[1].split("=")[1].split("A.U.")[0])
+        elif e_type == "gibbs":
+            if "Sum of electronic and thermal Free Energies=" in line:
+                energy = float(line.split()[-1])
+        else:
+            raise Exception(
+                f"{e_type} is not a valid option out of ['scf', 'gibbs']."
+            )
     return energy
+
+def get_gaussian_electronic_energy(lines):
+    energy = np.nan
+    for line in lines:
+        if (
+            "Recovered energy=" in line
+        ):  # this is for externally calcualted energy
+            energy = float(line.split("=")[1].split(" ")[1])
+        if "SCF Done:" in line:  # this is for internally calculated energy
+            energy = float(line.split(":")[1].split("=")[1].split("A.U.")[0])
+    return energy
+
+def get_gaussian_gibbs_energy(lines):
+    energy = np.nan
+    for line in lines:
+        if "Sum of electronic and thermal Free Energies=" in line:
+            energy = float(line.split()[-1])
+    return energy
+
+def get_gaussian_geometry_old(out_file):
+    with open(out_file, "r") as ofile:
+        lines = ofile.readlines()
+    geometry = get_optimized_structure(lines)
+    geometry["atoms"] = [get_atom_int(a) for a in geometry["atoms"]]
+    frequencies = get_frequencies(lines)
+    return geometry | frequencies
+
+def get_gaussian_geometry(lines):
+    geometry = get_optimized_structure(lines)
+    geometry["atoms"] = [get_atom_int(a) for a in geometry["atoms"]]
+    return geometry
+
+def get_gaussian_frequencies(lines):
+    return get_frequencies(lines)
+
+def gaussian_results(log_file, properties=['electronic_energy']):
+    results = {}
+    reader = {
+        'electronic_energy': get_gaussian_electronic_energy,
+        'gibbs_energy': get_gaussian_gibbs_energy,
+        'geometry': get_gaussian_geometry,
+        'frequencies': get_gaussian_frequencies
+        }
+    
+    with open(log_file, "r") as ofile:
+        lines = ofile.readlines()
+        
+    for property in properties:
+        results[property] = reader[property](lines)
+        
+    return results
