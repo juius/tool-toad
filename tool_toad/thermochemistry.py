@@ -12,7 +12,7 @@ ATM2PASCAL = 101325
 
 GAS_CONSTANT = 8.31446261815324  # J/(K x mol)
 BOLTZMANN_CONSTANT = 1.380649e-23  # J/K
-PLANCK_CONSTANT = 6.626070150e-34  # J/s
+PLANCK_CONSTANT = 6.626070150e-34  # J*s
 SPEED_OF_LIGHT = 299792458  # m/s
 AVOGARDOS_CONSTANT = 6.02214076e23  # 1/mol
 
@@ -33,7 +33,7 @@ def get_frequencies(lines):
     for idx in indices:
         line = lines[idx]
         frequencies.extend([float(f) for f in line.split()[-3:]])
-    return frequencies
+    return np.array(frequencies)
 
 
 def get_electronic_energy(lines):
@@ -41,20 +41,6 @@ def get_electronic_energy(lines):
     line = lines[indices[-1]]
     energy = float(line.split()[4])
     return energy
-
-
-def get_enthalpy_correction(lines):
-    indices = get_indices(lines, pattern="Thermal correction to Enthalpy=")
-    line = lines[indices[-1]]
-    correction = float(line.split()[-1])
-    return correction
-
-
-def get_translational_entropy(lines):
-    indices = get_indices(lines, pattern="Translational")
-    line = lines[indices[0]]
-    St = float(line.split()[-1])
-    return St
 
 
 def get_rotational_entropy(lines):
@@ -76,6 +62,46 @@ def get_molar_mass(lines):
     line = lines[indices[-1]]
     M = float(line.split()[2])
     return M
+
+
+def clip_frequencies(frequencies, f_cutoff, verbose=True):
+    """Clips Frequencies below a cutoff value to NaN
+
+    Parameters:
+    frequencies : array
+        Array/List of frequencies in cm^-1
+    f_cutoff : float
+        Frequency Cutoff in cm^-1
+
+    Returns:
+        Clipped Frequencies
+    """
+
+    frequencies = np.asarray(frequencies)
+    imag_freq = frequencies <= 0
+    if np.sum(imag_freq > 0):
+        if verbose:
+            print(
+                f"{np.sum(imag_freq > 0)} imaginary frequencies ignored: {frequencies[imag_freq]}"
+            )
+        frequencies[imag_freq] = np.nan
+    clip_freq = np.clip(frequencies, f_cutoff, np.nan)
+    return clip_freq
+
+
+def calc_zero_point_energy(frequencies):
+    """Calculates zero point correction in Hartree/Particle
+
+    Parameters:
+    frequencies : array
+        Array/List of frequencies in cm^-1
+
+    Returns:
+        Zero-Point Correction in Hartree/Particle
+    """
+    conversion_factor = SPEED_OF_LIGHT * 100
+    zpe = np.nansum(0.5 * PLANCK_CONSTANT * frequencies * conversion_factor)
+    return zpe / HARTREE2JOULES
 
 
 def calc_translational_entropy(molar_mass, temperature=298.15, M=None, p=None):
@@ -125,24 +151,16 @@ def calc_translational_entropy(molar_mass, temperature=298.15, M=None, p=None):
     ) * JOULES2CAL
 
 
-def calc_vibrational_entropy(
-    frequencies, f_cutoff=None, temperature=298.15, verbose=True
-):
+def calc_vibrational_entropy(frequencies, temperature=298.15):
     """Calculates vibrational component of Entropy
 
     S_v = R \sum( hv / (kT (exp(hv/kT) - 1)) - ln(1 - exp(-hv/kT)))
     'Cramer, C. J. Essentials of Computational Chemistry: Theories
     and Models, 2nd ed' p:365, eq:10.30
 
-    with the possibility to shift all frequencies below a cutoff value
-    to the cutoff value following Truhlar and Cramer
-    (doi.org/10.1021/jp205508z, p:14559, bottom right)
-
     Parameters:
     frequencies : list
         Frequencies in cm^-1
-    f_cutoff : float
-        Frequency Cutoff in cm^-1
     temperature : float
         Temperature in Kelvin
 
@@ -150,20 +168,10 @@ def calc_vibrational_entropy(
         Vibrational Contribution to Entropy in Cal/Mol-Kelvin
     """
 
-    frequencies = np.asarray(frequencies)
-    imag_freq = frequencies <= 0
-    if np.sum(imag_freq > 0):
-        if verbose:
-            print(
-                f"1 imaginary frequencies ignored: {float(frequencies[imag_freq])}"
-            )
-        frequencies[imag_freq] = np.nan
-
     energy_factor = PLANCK_CONSTANT * SPEED_OF_LIGHT * 100
     thermal_energy = BOLTZMANN_CONSTANT * temperature
 
-    clip_freq = np.clip(frequencies, f_cutoff, np.nan)
-    energies = clip_freq * energy_factor / thermal_energy
+    energies = frequencies * energy_factor / thermal_energy
 
     return (
         np.nansum(
@@ -172,7 +180,41 @@ def calc_vibrational_entropy(
         )
         * JOULES2CAL
     )
-    
+
+
+def calc_translational_energy(temperature):
+    return 1.5 * GAS_CONSTANT * temperature * JOULES2CAL / 1000
+
+
+def calc_rotational_energy(temperature):
+    return 1.5 * GAS_CONSTANT * temperature * JOULES2CAL / 1000
+
+
+def calc_vibrational_energy(frequencies, temperature):
+    """Calculates Vibrational Energy including ZPE
+
+    U_v = R sum(hv/2k + hv/k * 1/(exp(hv/kT) - 1))
+
+    Args:
+        frequencies (np.array): Frequencies in cm^-1
+        temperature (float): Temperature in K
+
+    Returns:
+        float: Vibrational Energy in KCal/Mol
+    """
+
+    vib_temp = PLANCK_CONSTANT * frequencies * SPEED_OF_LIGHT * 100 / BOLTZMANN_CONSTANT
+    vib_energy = GAS_CONSTANT * np.nansum(
+        vib_temp / 2 + vib_temp / (np.exp(vib_temp / temperature) - 1)
+    )
+    return vib_energy * JOULES2CAL / 1000
+
+
+def calc_zero_point_correction(frequencies):
+    frequencies = np.asarray(frequencies)
+    conversion_factor = SPEED_OF_LIGHT * 100
+    zpc = np.sum(0.5 * PLANCK_CONSTANT * frequencies * conversion_factor)
+    return zpc
 
 
 def recalc_gibbs(
@@ -180,7 +222,7 @@ def recalc_gibbs(
 ):
     """Calculates the Gibbs Free Energy in Hartree from a Gaussian LOG-file with the
     option to adjust the Standard State and treat low frequencies as proposed by
-    Truhlar and Cramer (doi.org/10.1021/jp205508z)
+    Truhlar and Cramer (doi.org/10.1021/jp205508z, p:14559, bottom right)
 
     Parameters:
     log_file : str
@@ -208,11 +250,23 @@ def recalc_gibbs(
 
     T, p0 = get_temperature_and_pressure(lines)  # Kelvin
     electronic_energy = get_electronic_energy(lines)  # Hartree/Particle
-    enthalpy_correction = get_enthalpy_correction(lines)
+    frequencies = get_frequencies(lines)  # cm^-1
+    frequencies = clip_frequencies(frequencies, f_cutoff, verbose=verbose)
 
-    Sr = get_rotational_entropy(lines)
+    trans_energy = calc_translational_energy(T)  # KCal/Mol
+    rot_energy = calc_rotational_energy(T)  # KCal/Mol
+    vib_energy = calc_vibrational_energy(frequencies, T)  # KCal/Mol
+    tot_energy = np.sum([trans_energy, rot_energy, vib_energy])  # KCal/Mol
+
+    thermal_correction_energy = tot_energy * 1000 / HARTEE2CALMOL  # Hartree/Particle
+    thermal_correction_enthalpy = (
+        thermal_correction_energy + BOLTZMANN_CONSTANT * T / HARTREE2JOULES
+    )
+    Sr = get_rotational_entropy(lines)  # Cal/Mol-Kelvin
     m = get_molar_mass(lines)
-    St = calc_translational_entropy(m, T, standard_state_M, standard_state_p)
+    St = calc_translational_entropy(
+        m, T, standard_state_M, standard_state_p
+    )  # Cal/Mol-Kelvin
 
     if verbose:
         stxt = (
@@ -223,14 +277,15 @@ def recalc_gibbs(
         if f_cutoff:
             print(f"and with a frequency cutoff of {f_cutoff} cm^-1")
 
-    frequencies = get_frequencies(lines)
     Sv = calc_vibrational_entropy(
-        frequencies=frequencies, f_cutoff=f_cutoff, temperature=T, verbose=False
-    )
+        frequencies=frequencies, temperature=T
+    )  # Cal/Mol-Kelvin
 
     S = St + Sr + Sv  # Cal/Mol-Kelvin
     entropy_correction = S * T / HARTEE2CALMOL
 
-    gibbs_free_energy = electronic_energy + enthalpy_correction - entropy_correction
-    
+    gibbs_free_energy = (
+        electronic_energy + thermal_correction_enthalpy - entropy_correction
+    )
+
     return gibbs_free_energy  # Hartree/Particle
