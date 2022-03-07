@@ -78,7 +78,7 @@ def get_molar_mass(lines):
     return M
 
 
-def calc_translational_entropy(molar_mass, temperature, M=None, p=None):
+def calc_translational_entropy(molar_mass, temperature=298.15, M=None, p=None):
     """Calculates translational component of Entropy
 
     S_t = R (ln((2pi m kT/h^2)^(3/2) * V) + 5/2)
@@ -114,7 +114,7 @@ def calc_translational_entropy(molar_mass, temperature, M=None, p=None):
         * (
             np.log(
                 (
-                    (2 * np.pi * molar_mass * BOLTZMANN_CONSTANT * temperature)
+                    (2 * np.pi * molar_mass * AMU2KG * BOLTZMANN_CONSTANT * temperature)
                     / PLANCK_CONSTANT ** 2
                 )
                 ** (3 / 2)
@@ -151,14 +151,13 @@ def calc_vibrational_entropy(
     """
 
     frequencies = np.asarray(frequencies)
-    if not f_cutoff:
-        imag_freq = frequencies <= 0
-        if np.sum(imag_freq > 0):
-            if verbose:
-                print(
-                    f"{np.sum(imag_freq)} imaginary frequencies ignored: {list(frequencies[imag_freq])}"
-                )
-            frequencies[imag_freq] = np.nan
+    imag_freq = frequencies <= 0
+    if np.sum(imag_freq > 0):
+        if verbose:
+            print(
+                f"1 imaginary frequencies ignored: {float(frequencies[imag_freq])}"
+            )
+        frequencies[imag_freq] = np.nan
 
     energy_factor = PLANCK_CONSTANT * SPEED_OF_LIGHT * 100
     thermal_energy = BOLTZMANN_CONSTANT * temperature
@@ -173,12 +172,13 @@ def calc_vibrational_entropy(
         )
         * JOULES2CAL
     )
+    
 
 
 def recalc_gibbs(
     log_file, f_cutoff=None, standard_state_M=None, standard_state_p=None, verbose=True
 ):
-    """Calculates the Gibbs Free Energy from a Gaussian LOG-file with the
+    """Calculates the Gibbs Free Energy in Hartree from a Gaussian LOG-file with the
     option to adjust the Standard State and treat low frequencies as proposed by
     Truhlar and Cramer (doi.org/10.1021/jp205508z)
 
