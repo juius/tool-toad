@@ -1,4 +1,5 @@
 import numpy as np
+from tabulate import tabulate
 
 # CONVERSION FACTORS
 
@@ -193,10 +194,10 @@ def calc_rotational_energy(temperature):
 def calc_vibrational_energy(frequencies, temperature):
     """Calculates Vibrational Energy including ZPE
 
-    U_v = R sum(hv/2k + hv/k * 1/(exp(hv/kT) - 1))
+    U_v = R \sum(hv/2k + hv/k * 1/(exp(hv/kT) - 1))
 
     Args:
-        frequencies (np.array): Frequencies in cm^-1
+        frequencies (numpy.Array): Frequencies in cm^-1
         temperature (float): Temperature in K
 
     Returns:
@@ -210,82 +211,174 @@ def calc_vibrational_energy(frequencies, temperature):
     return vib_energy * JOULES2CAL / 1000
 
 
-def calc_zero_point_correction(frequencies):
-    frequencies = np.asarray(frequencies)
-    conversion_factor = SPEED_OF_LIGHT * 100
-    zpc = np.sum(0.5 * PLANCK_CONSTANT * frequencies * conversion_factor)
-    return zpc
+class Thermochemistry:
+    """
+    A class to calculate thermodynamical properties from a Gaussian LOG-file
 
+    ...
 
-def recalc_gibbs(
-    log_file, f_cutoff=None, standard_state_M=None, standard_state_p=None, verbose=True
-):
-    """Calculates the Gibbs Free Energy in Hartree from a Gaussian LOG-file with the
-    option to adjust the Standard State and treat low frequencies as proposed by
-    Truhlar and Cramer (doi.org/10.1021/jp205508z, p:14559, bottom right)
-
-    Parameters:
+    Attributes
+    ----------
     log_file : str
         Path to LOG-file
-    f_cutoff : float
-        Frequency Cutoff in cm^-1
-    standard_state_M : float (optional)
-        Concentration of Standard State in mol/L
-    standard_state_p : float (optional)
-        Pressure of Standard State in atm
-
-    Returns:
-        Gibbs Free Energy in Hartree/Particle
+    f_cutoff : float (default None)
+        Frequency cut off value in cm^-1
+    standard_state_M : float (default None)
+        Standard state in mol/L
+    standard_state_p : float (default None)
+        Standard state in atm
     """
 
-    with open(log_file, "r") as f:
-        lines = f.readlines()
-
-    # check if terminated successfully
-    if not "Normal termination of Gaussian" in next(
-        s for s in reversed(lines) if s != "\n"
+    def __init__(
+        self,
+        log_file,
+        f_cutoff=None,
+        standard_state_M=None,
+        standard_state_p=None,
+        temperature=None,
+        verbose=True,
     ):
-        print(f"Abnormal Termination: of {log_file}")
-        return np.nan
+        self.log_file = log_file
+        self.f_cutoff = f_cutoff
+        self.standard_state_M = standard_state_M
+        self.standard_state_p = standard_state_p
+        self.verbose = verbose
+        self.T = temperature
 
-    T, p0 = get_temperature_and_pressure(lines)  # Kelvin
-    electronic_energy = get_electronic_energy(lines)  # Hartree/Particle
-    frequencies = get_frequencies(lines)  # cm^-1
-    frequencies = clip_frequencies(frequencies, f_cutoff, verbose=verbose)
+    def read_lines(self):
+        with open(self.log_file, "r") as f:
+            lines = f.readlines()
+        self.lines = lines
 
-    trans_energy = calc_translational_energy(T)  # KCal/Mol
-    rot_energy = calc_rotational_energy(T)  # KCal/Mol
-    vib_energy = calc_vibrational_energy(frequencies, T)  # KCal/Mol
-    tot_energy = np.sum([trans_energy, rot_energy, vib_energy])  # KCal/Mol
+    def normal_termination(self):
+        # check if terminated successfully
+        if not "Normal termination of Gaussian" in next(
+            s for s in reversed(self.lines) if s != "\n"
+        ):
+            print(f"Abnormal Termination: of {self.log_file}")
+            return False
+        else:
+            return True
 
-    thermal_correction_energy = tot_energy * 1000 / HARTEE2CALMOL  # Hartree/Particle
-    thermal_correction_enthalpy = (
-        thermal_correction_energy + BOLTZMANN_CONSTANT * T / HARTREE2JOULES
-    )
-    Sr = get_rotational_entropy(lines)  # Cal/Mol-Kelvin
-    m = get_molar_mass(lines)
-    St = calc_translational_entropy(
-        m, T, standard_state_M, standard_state_p
-    )  # Cal/Mol-Kelvin
+    def read_properties(self):
+        T0, p0 = get_temperature_and_pressure(self.lines)  # Kelvin
+        electronic_energy = get_electronic_energy(self.lines)  # Hartree/Particle
+        frequencies = get_frequencies(self.lines)  # cm^-1
+        Sr = get_rotational_entropy(self.lines)  # Cal/Mol-Kelvin
+        m = get_molar_mass(self.lines)
+        self.T0 = T0
+        self.p0 = p0
+        self.electronic_energy = electronic_energy
+        self.frequencies = frequencies
+        self.S_rot = Sr
+        self.molar_mass = m
+        if not self.T:
+            self.T = T0
 
-    if verbose:
-        stxt = (
-            f"{standard_state_M} M" if standard_state_M else f"{standard_state_p} atm"
+    def handle_frequencies(self):
+        c_freq = clip_frequencies(self.frequencies, self.f_cutoff, verbose=self.verbose)
+        self.c_frequencies = c_freq
+
+    def calc_entropies(self):
+        St = calc_translational_entropy(
+            self.molar_mass, self.T, self.standard_state_M, self.standard_state_p
+        )  # Cal/Mol-Kelvin
+
+        if self.verbose:
+            stxt = (
+                f"{self.standard_state_M} M"
+                if self.standard_state_M
+                else f"{self.standard_state_p} atm"
+            )
+            print(f"Calculating the Gibbs Free Energy at {self.T} K")
+            print(f"with a Standard State of {stxt}")
+            if self.f_cutoff:
+                print(f"and with a frequency cutoff of {self.f_cutoff} cm^-1")
+
+        Sv = calc_vibrational_entropy(
+            frequencies=self.c_frequencies, temperature=self.T
+        )  # Cal/Mol-Kelvin
+
+        S = St + Sv + self.S_rot  # Cal/Mol-Kelvin
+
+        self.S_trans = St
+        self.S_vib = Sv
+        self.S_tot = S
+
+    def calc_thermal_energies(self):
+        trans_energy = calc_translational_energy(self.T)  # KCal/Mol
+        rot_energy = calc_rotational_energy(self.T)  # KCal/Mol
+        vib_energy = calc_vibrational_energy(self.c_frequencies, self.T)  # KCal/Mol
+        tot_energy = np.sum([trans_energy, rot_energy, vib_energy])  # KCal/Mol
+
+        self.U_trans = trans_energy
+        self.U_rot = rot_energy
+        self.U_vib = vib_energy
+        self.U_tot = tot_energy
+
+    def _print(self):
+        table = [
+            [
+                "Electronic Energy",
+                self.electronic_energy,
+                self.electronic_energy * HARTEE2CALMOL / 1000,
+            ],
+            [
+                "Thermal Correction to Gibbs Energy",
+                self.gibbs_correction,
+                self.gibbs_correction * HARTEE2CALMOL / 1000,
+            ],
+            [
+                "Gibbs Free Energy",
+                self.gibbs_free_energy,
+                self.gibbs_free_energy * HARTEE2CALMOL / 1000,
+            ],
+        ]
+
+        print(
+            tabulate(
+                table,
+                headers=["Property", "[Hartree/Particle]", "[KCal/Mol]"],
+                numalign="right",
+            )
         )
-        print(f"Calculating the Gibbs Free Energy at {T} K")
-        print(f"with a Standard State of {stxt}")
-        if f_cutoff:
-            print(f"and with a frequency cutoff of {f_cutoff} cm^-1")
 
-    Sv = calc_vibrational_entropy(
-        frequencies=frequencies, temperature=T
-    )  # Cal/Mol-Kelvin
+    def run(self):
+        """
+        Calculates the Gibbs Free Energy in Hartree from a Gaussian LOG-file with the
+        option to adjust the Standard State and treat low frequencies as proposed by
+        Truhlar and Cramer (doi.org/10.1021/jp205508z, p:14559, bottom right)
+        """
+        self.read_lines()
+        if not self.normal_termination():
+            return np.nan
+        self.read_properties()
+        self.handle_frequencies()
+        self.calc_thermal_energies()
+        self.calc_entropies()
+        self.zpe = calc_zero_point_energy(self.c_frequencies)
 
-    S = St + Sr + Sv  # Cal/Mol-Kelvin
-    entropy_correction = S * T / HARTEE2CALMOL
+        # Calculate Corrections
+        self.thermal_correction_energy = (
+            self.U_tot * 1000 / HARTEE2CALMOL
+        )  # Hartree/Particle
+        self.thermal_correction_enthalpy = (
+            self.thermal_correction_energy
+            + BOLTZMANN_CONSTANT * self.T / HARTREE2JOULES
+        )
 
-    gibbs_free_energy = (
-        electronic_energy + thermal_correction_enthalpy - entropy_correction
-    )
+        self.entropy_correction = self.S_tot * self.T / HARTEE2CALMOL
 
-    return gibbs_free_energy  # Hartree/Particle
+        self.gibbs_correction = (
+            self.thermal_correction_enthalpy - self.entropy_correction
+        )
+
+        # Calculate Gibbs Free Energy in Hartree/Particle
+        self.gibbs_free_energy = (
+            self.electronic_energy
+            + self.thermal_correction_enthalpy
+            - self.entropy_correction
+        )
+
+        if self.verbose:
+            self._print()
