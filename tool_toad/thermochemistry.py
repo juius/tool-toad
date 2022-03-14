@@ -382,3 +382,17 @@ class Thermochemistry:
 
         if self.verbose:
             self._print()
+
+if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Calculates the Gibbs Free Energy in Hartree.')
+    parser.add_argument('-f','--file', help='Gaussian log-file', required=True, type=str)
+    parser.add_argument('-c','--cutoff', help='Frequency cut off value in cm^-1', required=False, type=float)
+    parser.add_argument('-m','--molarity', help='Standard state in mol/L', required=False, type=float)
+    parser.add_argument('-p','--pressure', help='Standard state in atm', required=False, type=float)
+    args = parser.parse_args()
+    
+    thermo = Thermochemistry(args.file, f_cutoff=args.cutoff, standard_state_M=args.molarity, standard_state_p=args.pressure, verbose=True)
+    thermo.run()
+    
