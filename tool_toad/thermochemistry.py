@@ -356,7 +356,7 @@ class Thermochemistry:
         self.handle_frequencies()
         self.calc_thermal_energies()
         self.calc_entropies()
-        self.zpe = calc_zero_point_energy(self.c_frequencies)
+        self.zpe = calc_zero_point_energy(self.frequencies) # normal harmonic approx.
 
         # Calculate Corrections
         self.thermal_correction_energy = (
@@ -373,12 +373,19 @@ class Thermochemistry:
             self.thermal_correction_enthalpy - self.entropy_correction
         )
 
+        # Calculate Enthalpy in Hartree/Particle
+        self.enthalpy = (
+            self.electronic_energy
+            + self.thermal_correction_enthalpy
+        )
+    
         # Calculate Gibbs Free Energy in Hartree/Particle
         self.gibbs_free_energy = (
             self.electronic_energy
             + self.thermal_correction_enthalpy
             - self.entropy_correction
         )
+        
 
         if self.verbose:
             self._print()
