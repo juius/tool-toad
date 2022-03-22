@@ -356,7 +356,7 @@ class Thermochemistry:
         self.handle_frequencies()
         self.calc_thermal_energies()
         self.calc_entropies()
-        self.zpe = calc_zero_point_energy(self.frequencies) # normal harmonic approx.
+        self.zpe = calc_zero_point_energy(self.c_frequencies)
 
         # Calculate Corrections
         self.thermal_correction_energy = (
