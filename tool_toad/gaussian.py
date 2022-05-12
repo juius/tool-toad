@@ -10,20 +10,22 @@ GAUSSIAN_COMMANDS = {
     "sp": [
         "sp b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
         f"PDens=10\nPrintSpheres\n",
+        # ' '
     ],
     "freq": [
         "freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
         f"PDens=10\nPrintSpheres\n",
+        ' '
     ],
     "opt+freq": [
         "opt freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        # f"PDens=10\nPrintSpheres\n",
-        f' '
+        f"PDens=10\nPrintSpheres\n",
+        # f' '
     ],
     "ts_opt+freq": [
         "opt=(ts,calcfc,noeigentest) freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        # f"PDens=10\nPrintSpheres\n",
-        f' '
+        f"PDens=10\nPrintSpheres\n",
+        # f' '
     ],
     "irc_forward": [
         "ircmax=(forward,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
@@ -41,9 +43,9 @@ GAUSSIAN_COMMANDS = {
         "ircmax=(reverse,LQA,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
         f"PDens=10\nPrintSpheres\n",
     ],
-    "ts_opt_xtb": [f"opt=(ts,calcall,noeigentest,nomicro) external={__GAUXTB_CMD__}"],
-    "opt_xtb": [f"opt external={__GAUXTB_CMD__}"],
-    "freq_xtb": [f"freq external={__GAUXTB_CMD__}"],
+    "ts_opt_xtb": [f"opt=(ts,calcall,noeigentest,nomicro,MaxStep=2) external='{__GAUXTB_CMD__}'"],
+    "opt_xtb": [f"opt external='{__GAUXTB_CMD__}'"],
+    "freq_xtb": [f"freq external='{__GAUXTB_CMD__}'"],
 }
 
 
