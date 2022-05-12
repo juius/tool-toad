@@ -43,6 +43,14 @@ def get_electronic_energy(lines):
     energy = float(line.split()[4])
     return energy
 
+def get_solv_energy(lines):
+    indices = get_indices(lines, pattern="SMD-CDS")
+    line = lines[indices[-1]]
+    try:
+        energy = float(line.split()[-1])
+    except:
+        energy = np.nan
+    return energy
 
 def get_rotational_entropy(lines):
     indices = get_indices(lines, pattern="Rotational")
@@ -263,12 +271,14 @@ class Thermochemistry:
     def read_properties(self):
         T0, p0 = get_temperature_and_pressure(self.lines)  # Kelvin
         electronic_energy = get_electronic_energy(self.lines)  # Hartree/Particle
+        solv_energy = get_solv_energy(self.lines) # kcal/mol THIS IS ONLY THE NON-ELECTROSTATICS!
         frequencies = get_frequencies(self.lines)  # cm^-1
         Sr = get_rotational_entropy(self.lines)  # Cal/Mol-Kelvin
         m = get_molar_mass(self.lines)
         self.T0 = T0
         self.p0 = p0
         self.electronic_energy = electronic_energy
+        self.solv_energy = solv_energy
         self.frequencies = frequencies
         self.S_rot = Sr
         self.molar_mass = m
@@ -319,7 +329,7 @@ class Thermochemistry:
     def _print(self):
         table = [
             [
-                "Electronic Energy",
+                "Electronic Energy ()",
                 self.electronic_energy,
                 self.electronic_energy * HARTEE2CALMOL / 1000,
             ],
@@ -351,7 +361,7 @@ class Thermochemistry:
         """
         self.read_lines()
         if not self.normal_termination():
-            return np.nan
+            raise Exception("Abnormal Termination of Gaussian")
         self.read_properties()
         self.handle_frequencies()
         self.calc_thermal_energies()
