@@ -19,6 +19,6 @@ def sa_target_score_clipped(
     :param target: the target logp value
     :param sigma: the width of the gaussian distribution
     """
-    mn = neutralize_molecules(m)
+    mn = neutralize_molecules([m])[0]
     score: float = calculateScore(mn)
     return gaussian_modifier_clipped(score, target, sigma)
