@@ -1,49 +1,53 @@
-from rdkit import Chem
 import os
+
 import numpy as np
-from ppqm.gaussian import get_optimized_structure, get_frequencies
-from ppqm.chembridge import get_atom_int
+from rdkit import Chem
+
+# from ppqm.gaussian import get_optimized_structure, get_frequencies
+# from ppqm.chembridge import get_atom_int
 
 __GAUXTB_CMD__ = "/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol"
 
 GAUSSIAN_COMMANDS = {
     "sp": [
         "sp b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
         # ' '
     ],
     "freq": [
         "freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
-        ' '
+        "PDens=10\nPrintSpheres\n",
+        " ",
     ],
     "opt+freq": [
         "opt freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
         # f' '
     ],
     "ts_opt+freq": [
         "opt=(ts,calcfc,noeigentest) freq b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
         # f' '
     ],
     "irc_forward": [
         "ircmax=(forward,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
     ],
     "irc_reverse": [
         "ircmax=(reverse,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
     ],
     "flat_irc_forward": [
         "ircmax=(forward,LQA,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
     ],
     "flat_irc_reverse": [
         "ircmax=(reverse,LQA,ReadCartesianFC,maxpoints=25,recalc=5) b3lyp/6-31+g(d,p) scrf=(smd,solvent=methanol,read) empiricaldispersion=gd3 int=ultrafine",
-        f"PDens=10\nPrintSpheres\n",
+        "PDens=10\nPrintSpheres\n",
     ],
-    "ts_opt_xtb": [f"opt=(ts,calcall,noeigentest,nomicro,MaxStep=2) external='{__GAUXTB_CMD__}'"],
+    "ts_opt_xtb": [
+        "opt=(ts,calcall,noeigentest,nomicro,MaxStep=2) external='{__GAUXTB_CMD__}'"
+    ],
     "opt_xtb": [f"opt external='{__GAUXTB_CMD__}'"],
     "freq_xtb": [f"freq external='{__GAUXTB_CMD__}'"],
 }
@@ -52,7 +56,8 @@ GAUSSIAN_COMMANDS = {
 def write_gaussian_input_file(
     mol_or_chk, name, command=GAUSSIAN_COMMANDS["opt+freq"], dir=".", mem=4, cpus=4
 ):
-    """Writes .com file (Gaussian input file), taking structure from rdkit.Mol object or .chk file
+    """Writes .com file (Gaussian input file), taking structure from rdkit.Mol
+    object or .chk file.
 
     Args:
         mol_or_chk (rdkit.Mol or str): rdkit.Mol object or path to .chk file
@@ -100,7 +105,7 @@ def write_gaussian_input_file(
     # Check if command contains solvent specification
     try:
         scrf = command[0].split("scrf=(")[-1].split(")")[0].lower()
-    except:
+    except Exception:
         scrf = " "
     if "read" in scrf:
         solvent_input = command[1]
@@ -108,13 +113,13 @@ def write_gaussian_input_file(
         solvent_input = ""
 
     with open(os.path.join(dir, file_name), "w") as file:
-        file.write(link0 + route + coords + f"\n" + solvent_input + f"\n")
+        file.write(link0 + route + coords + "\n" + solvent_input + "\n")
 
     return os.path.join(dir, file_name)
 
 
 def get_gaussian_energy(lines, e_type="scf"):
-    """Reads Energy from Gaussian .out/.log file
+    """Reads Energy from Gaussian .out/.log file.
 
     Args:
         out_file (str): Path to .out/.log file
@@ -126,9 +131,7 @@ def get_gaussian_energy(lines, e_type="scf"):
     energy = np.nan
     for line in lines:
         if e_type == "scf":
-            if (
-                "Recovered energy=" in line
-            ):  # this is for externally calcualted energy
+            if "Recovered energy=" in line:  # this is for externally calcualted energy
                 energy = float(line.split("=")[1].split(" ")[1])
             if "SCF Done:" in line:  # this is for internally calculated energy
                 energy = float(line.split(":")[1].split("=")[1].split("A.U.")[0])
@@ -136,21 +139,19 @@ def get_gaussian_energy(lines, e_type="scf"):
             if "Sum of electronic and thermal Free Energies=" in line:
                 energy = float(line.split()[-1])
         else:
-            raise Exception(
-                f"{e_type} is not a valid option out of ['scf', 'gibbs']."
-            )
+            raise Exception(f"{e_type} is not a valid option out of ['scf', 'gibbs'].")
     return energy
+
 
 def get_gaussian_electronic_energy(lines):
     energy = np.nan
     for line in lines:
-        if (
-            "Recovered energy=" in line
-        ):  # this is for externally calcualted energy
+        if "Recovered energy=" in line:  # this is for externally calcualted energy
             energy = float(line.split("=")[1].split(" ")[1])
         if "SCF Done:" in line:  # this is for internally calculated energy
             energy = float(line.split(":")[1].split("=")[1].split("A.U.")[0])
     return energy
+
 
 def get_gaussian_gibbs_energy(lines):
     energy = np.nan
@@ -159,35 +160,42 @@ def get_gaussian_gibbs_energy(lines):
             energy = float(line.split()[-1])
     return energy
 
+
 def get_gaussian_geometry_old(out_file):
-    with open(out_file, "r") as ofile:
-        lines = ofile.readlines()
-    geometry = get_optimized_structure(lines)
-    geometry["atoms"] = [get_atom_int(a) for a in geometry["atoms"]]
-    frequencies = get_frequencies(lines)
-    return geometry | frequencies
+    # with open(out_file, "r") as ofile:
+    #     lines = ofile.readlines()
+    # geometry = get_optimized_structure(lines)
+    # geometry["atoms"] = [get_atom_int(a) for a in geometry["atoms"]]
+    # frequencies = get_frequencies(lines)
+    # return geometry | frequencies
+    pass
+
 
 def get_gaussian_geometry(lines):
-    geometry = get_optimized_structure(lines)
-    geometry["atoms"] = [get_atom_int(a) for a in geometry["atoms"]]
-    return geometry
+    # geometry = get_optimized_structure(lines)
+    # geometry["atoms"] = [get_atom_int(a) for a in geometry["atoms"]]
+    # return geometry
+    pass
+
 
 def get_gaussian_frequencies(lines):
-    return get_frequencies(lines)
+    # return get_frequencies(lines)
+    pass
 
-def gaussian_results(log_file, properties=['electronic_energy']):
+
+def gaussian_results(log_file, properties=["electronic_energy"]):
     results = {}
     reader = {
-        'electronic_energy': get_gaussian_electronic_energy,
-        'gibbs_energy': get_gaussian_gibbs_energy,
-        'geometry': get_gaussian_geometry,
-        'frequencies': get_gaussian_frequencies
-        }
-    
+        "electronic_energy": get_gaussian_electronic_energy,
+        "gibbs_energy": get_gaussian_gibbs_energy,
+        "geometry": get_gaussian_geometry,
+        "frequencies": get_gaussian_frequencies,
+    }
+
     with open(log_file, "r") as ofile:
         lines = ofile.readlines()
-        
+
     for property in properties:
         results[property] = reader[property](lines)
-        
+
     return results
