@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import py3Dmol
+from matplotlib import patches
 from rdkit import Chem
+from rdkit.Chem import Draw
 
 
 def draw3d(
@@ -45,3 +48,16 @@ def draw3d(
     p.zoomTo()
     p.show()
     return p
+
+
+def drawMolFrame(mol, frameColor="crimson", linewidth=10, size=(300, 250), ax=None):
+    if not ax:
+        fig, ax = plt.subplots()
+    im = Draw.MolToImage(mol, size=size)
+    ax.imshow(im)
+    frame = patches.Rectangle(
+        (0, 0), *im.size, linewidth=linewidth, edgecolor=frameColor, facecolor="none"
+    )
+    ax.add_patch(frame)
+    ax.axis("off")
+    return ax.figure
