@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as plticker
+import numpy as np
 import py3Dmol
 from matplotlib import patches
 from rdkit import Chem
@@ -61,3 +63,43 @@ def drawMolFrame(mol, frameColor="crimson", linewidth=10, size=(300, 250), ax=No
     ax.add_patch(frame)
     ax.axis("off")
     return ax.figure
+
+
+def plot_parity(ax, tick_base=10, **kwargs):
+    ax.set_aspect("equal")
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    ax_min = min(xlim[0], ylim[0])
+    ax_max = max(xlim[1], ylim[1])
+
+    ax.plot(
+        [ax_min, ax_max],
+        [ax_min, ax_max],
+        c="grey",
+        linestyle="dashed",
+        zorder=0,
+        **kwargs
+    )
+    ax.set_xlim(ax_min, ax_max)
+    ax.set_ylim(ax_min, ax_max)
+
+    loc = plticker.MultipleLocator(base=tick_base)
+    ax.xaxis.set_major_locator(loc)
+    ax.yaxis.set_major_locator(loc)
+
+
+def plot_residual_histogram(
+    ax,
+    x,
+    y,
+    loc=[0.58, 0.13, 0.4, 0.4],
+    bins=15,
+    xlabel="Residual (kcal/mol)",
+    **kwargs
+):
+    insert = ax.inset_axes(loc)
+    diff = y - x
+    insert.hist(diff, bins=bins, **kwargs)
+    insert.set_xlim(-np.max(abs(diff)), np.max(abs(diff)))
+    insert.set_xlabel(xlabel)
+    insert.set_ylabel("Count")
