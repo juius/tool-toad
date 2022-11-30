@@ -43,14 +43,16 @@ def get_electronic_energy(lines):
     energy = float(line.split()[4])
     return energy
 
+
 def get_solv_energy(lines):
     indices = get_indices(lines, pattern="SMD-CDS")
     line = lines[indices[-1]]
     try:
         energy = float(line.split()[-1])
-    except:
+    except ValueError:
         energy = np.nan
     return energy
+
 
 def get_rotational_entropy(lines):
     indices = get_indices(lines, pattern="Rotational")
@@ -74,7 +76,7 @@ def get_molar_mass(lines):
 
 
 def clip_frequencies(frequencies, f_cutoff, verbose=True):
-    """Clips Frequencies below a cutoff value to NaN
+    """Clips Frequencies below a cutoff value to NaN.
 
     Parameters:
     frequencies : array
@@ -99,7 +101,7 @@ def clip_frequencies(frequencies, f_cutoff, verbose=True):
 
 
 def calc_zero_point_energy(frequencies):
-    """Calculates zero point correction in Hartree/Particle
+    """Calculates zero point correction in Hartree/Particle.
 
     Parameters:
     frequencies : array
@@ -114,7 +116,7 @@ def calc_zero_point_energy(frequencies):
 
 
 def calc_translational_entropy(molar_mass, temperature=298.15, M=None, p=None):
-    """Calculates translational component of Entropy
+    """Calculates translational component of Entropy.
 
     S_t = R (ln((2pi m kT/h^2)^(3/2) * V) + 5/2)
     with the mass of the molecule m in kg and the volume V in m^3
@@ -150,7 +152,7 @@ def calc_translational_entropy(molar_mass, temperature=298.15, M=None, p=None):
             np.log(
                 (
                     (2 * np.pi * molar_mass * AMU2KG * BOLTZMANN_CONSTANT * temperature)
-                    / PLANCK_CONSTANT ** 2
+                    / PLANCK_CONSTANT**2
                 )
                 ** (3 / 2)
                 * V
@@ -161,9 +163,9 @@ def calc_translational_entropy(molar_mass, temperature=298.15, M=None, p=None):
 
 
 def calc_vibrational_entropy(frequencies, temperature=298.15):
-    """Calculates vibrational component of Entropy
+    """Calculates vibrational component of Entropy.
 
-    S_v = R \sum( hv / (kT (exp(hv/kT) - 1)) - ln(1 - exp(-hv/kT)))
+    S_v = R sum( hv / (kT (exp(hv/kT) - 1)) - ln(1 - exp(-hv/kT)))
     'Cramer, C. J. Essentials of Computational Chemistry: Theories
     and Models, 2nd ed' p:365, eq:10.30
 
@@ -200,9 +202,9 @@ def calc_rotational_energy(temperature):
 
 
 def calc_vibrational_energy(frequencies, temperature):
-    """Calculates Vibrational Energy including ZPE
+    """Calculates Vibrational Energy including ZPE.
 
-    U_v = R \sum(hv/2k + hv/k * 1/(exp(hv/kT) - 1))
+    U_v = R sum(hv/2k + hv/k * 1/(exp(hv/kT) - 1))
 
     Args:
         frequencies (numpy.Array): Frequencies in cm^-1
@@ -260,7 +262,7 @@ class Thermochemistry:
 
     def normal_termination(self):
         # check if terminated successfully
-        if not "Normal termination of Gaussian" in next(
+        if "Normal termination of Gaussian" not in next(
             s for s in reversed(self.lines) if s != "\n"
         ):
             print(f"Abnormal Termination: of {self.log_file}")
@@ -271,7 +273,9 @@ class Thermochemistry:
     def read_properties(self):
         T0, p0 = get_temperature_and_pressure(self.lines)  # Kelvin
         electronic_energy = get_electronic_energy(self.lines)  # Hartree/Particle
-        solv_energy = get_solv_energy(self.lines) # kcal/mol THIS IS ONLY THE NON-ELECTROSTATICS!
+        solv_energy = get_solv_energy(
+            self.lines
+        )  # kcal/mol THIS IS ONLY THE NON-ELECTROSTATICS!
         frequencies = get_frequencies(self.lines)  # cm^-1
         Sr = get_rotational_entropy(self.lines)  # Cal/Mol-Kelvin
         m = get_molar_mass(self.lines)
@@ -354,11 +358,10 @@ class Thermochemistry:
         )
 
     def run(self):
-        """
-        Calculates the Gibbs Free Energy in Hartree from a Gaussian LOG-file with the
-        option to adjust the Standard State and treat low frequencies as proposed by
-        Truhlar and Cramer (doi.org/10.1021/jp205508z, p:14559, bottom right)
-        """
+        """Calculates the Gibbs Free Energy in Hartree from a Gaussian LOG-file
+        with the option to adjust the Standard State and treat low frequencies
+        as proposed by Truhlar and Cramer (doi.org/10.1021/jp205508z, p:14559,
+        bottom right)"""
         self.read_lines()
         if not self.normal_termination():
             raise Exception("Abnormal Termination of Gaussian")
@@ -384,32 +387,48 @@ class Thermochemistry:
         )
 
         # Calculate Enthalpy in Hartree/Particle
-        self.enthalpy = (
-            self.electronic_energy
-            + self.thermal_correction_enthalpy
-        )
-    
+        self.enthalpy = self.electronic_energy + self.thermal_correction_enthalpy
+
         # Calculate Gibbs Free Energy in Hartree/Particle
         self.gibbs_free_energy = (
             self.electronic_energy
             + self.thermal_correction_enthalpy
             - self.entropy_correction
         )
-        
 
         if self.verbose:
             self._print()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Calculates the Gibbs Free Energy in Hartree.')
-    parser.add_argument('-f','--file', help='Gaussian log-file', required=True, type=str)
-    parser.add_argument('-c','--cutoff', help='Frequency cut off value in cm^-1', required=False, type=float)
-    parser.add_argument('-m','--molarity', help='Standard state in mol/L', required=False, type=float)
-    parser.add_argument('-p','--pressure', help='Standard state in atm', required=False, type=float)
+
+    parser = argparse.ArgumentParser(
+        description="Calculates the Gibbs Free Energy in Hartree."
+    )
+    parser.add_argument(
+        "-f", "--file", help="Gaussian log-file", required=True, type=str
+    )
+    parser.add_argument(
+        "-c",
+        "--cutoff",
+        help="Frequency cut off value in cm^-1",
+        required=False,
+        type=float,
+    )
+    parser.add_argument(
+        "-m", "--molarity", help="Standard state in mol/L", required=False, type=float
+    )
+    parser.add_argument(
+        "-p", "--pressure", help="Standard state in atm", required=False, type=float
+    )
     args = parser.parse_args()
-    
-    thermo = Thermochemistry(args.file, f_cutoff=args.cutoff, standard_state_M=args.molarity, standard_state_p=args.pressure, verbose=True)
+
+    thermo = Thermochemistry(
+        args.file,
+        f_cutoff=args.cutoff,
+        standard_state_M=args.molarity,
+        standard_state_p=args.pressure,
+        verbose=True,
+    )
     thermo.run()
-    

@@ -13,9 +13,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, "README.md")) as f:
     long_description = f.read()
 
-short_description = (
-    "A collection of computational chemisty utilities."
-)
+short_description = "A collection of computational chemisty utilities."
 
 
 setuptools.setup(

@@ -10,7 +10,7 @@ from rdkit.Chem import Draw
 
 
 def draw3d(
-    mols, overlay=False, confId=-1, atomlabel=False, vibration=True, trajectory=False
+    mols: list, overlay: bool = False, confId: int = -1, atomlabel: bool = False
 ):
     width = 900
     height = 600
@@ -52,20 +52,75 @@ def draw3d(
     return p
 
 
-def drawMolFrame(mol, frameColor="crimson", linewidth=10, size=(300, 250), ax=None):
-    if not ax:
-        fig, ax = plt.subplots()
-    im = Draw.MolToImage(mol, size=size)
-    ax.imshow(im)
-    frame = patches.Rectangle(
-        (0, 0), *im.size, linewidth=linewidth, edgecolor=frameColor, facecolor="none"
+dopts = Chem.Draw.rdMolDraw2D.MolDrawOptions()
+dopts.prepareMolsForDrawing = True
+dopts.centreMoleculesBeforeDrawing = True
+dopts.legendFontSize = 18
+dopts.minFontSize = 30
+dopts.padding = 0.05
+dopts.atomLabelFontSize = 40
+dopts.bondLineWidth = 5
+
+
+def drawMolInsert(
+    ax_below: plt.axes,
+    mol: Chem.Mol,
+    pos: tuple,
+    xSize: float = 0.5,
+    aspect: float = 0.33,
+) -> plt.axes:
+    ax = ax_below.inset_axes([*pos, xSize, xSize * aspect])
+    resolution = 1000
+    im = Draw.MolToImage(
+        mol,
+        size=(int(resolution * xSize), int(resolution * xSize * aspect)),
+        options=dopts,
     )
-    ax.add_patch(frame)
+    ax.imshow(im, origin="lower")
     ax.axis("off")
-    return ax.figure
+    return ax
 
 
-def plot_parity(ax, tick_base=10, **kwargs):
+def addFrame(
+    ax_around: plt.axes,
+    ax_below: plt.axes,
+    linewidth: int = 6,
+    edgecolor: str = "crimson",
+    nShadows: int = 20,
+    shadowLinewidth: float = 0.05,
+    molZorder: int = 5,
+) -> None:
+    images = ax_around.get_images()
+    assert len(images) == 1, f"Found {len(images)} images in {ax_around}, expected 1"
+    img = images[0]
+    frame = patches.FancyBboxPatch(
+        (0, 0),
+        *reversed(img.get_size()),
+        boxstyle="round",
+        linewidth=linewidth,
+        edgecolor=edgecolor,
+        facecolor="none",
+        transform=ax_around.transData,
+        zorder=molZorder,
+    )
+    ax_below.add_patch(frame)
+    if nShadows:
+        for i in range(nShadows):
+            shadow = patches.FancyBboxPatch(
+                (0, 0),
+                *reversed(img.get_size()),
+                boxstyle="round",
+                linewidth=shadowLinewidth * i**2 + 0.2,
+                edgecolor="black",
+                facecolor="none",
+                alpha=0.7 / nShadows,
+                transform=ax_around.transData,
+                zorder=frame.get_zorder() - 1,
+            )
+            ax_below.add_patch(shadow)
+
+
+def plot_parity(ax: plt.axes, tick_base: int = 10, **kwargs) -> None:
     ax.set_aspect("equal")
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
@@ -78,7 +133,7 @@ def plot_parity(ax, tick_base=10, **kwargs):
         c="grey",
         linestyle="dashed",
         zorder=0,
-        **kwargs
+        **kwargs,
     )
     ax.set_xlim(ax_min, ax_max)
     ax.set_ylim(ax_min, ax_max)
@@ -89,17 +144,18 @@ def plot_parity(ax, tick_base=10, **kwargs):
 
 
 def plot_residual_histogram(
-    ax,
-    x,
-    y,
-    loc=[0.58, 0.13, 0.4, 0.4],
-    bins=15,
-    xlabel="Residual (kcal/mol)",
-    **kwargs
-):
+    ax: plt.axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    loc: list = [0.58, 0.13, 0.4, 0.4],
+    bins: int = 15,
+    xlabel: str = "Residual (kcal/mol)",
+    **kwargs,
+) -> plt.axes:
     insert = ax.inset_axes(loc)
     diff = y - x
     insert.hist(diff, bins=bins, **kwargs)
     insert.set_xlim(-np.max(abs(diff)), np.max(abs(diff)))
     insert.set_xlabel(xlabel)
     insert.set_ylabel("Count")
+    return insert
