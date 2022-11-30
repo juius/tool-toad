@@ -12,6 +12,17 @@ from rdkit.Chem import Draw
 def draw3d(
     mols: list, overlay: bool = False, confId: int = -1, atomlabel: bool = False
 ):
+    """Draw 3D structures in Jupyter notebook using py3Dmol.
+
+    Args:
+        mols (list): List of RDKit molecules.
+        overlay (bool, optional): Overlay molecules. Defaults to False.
+        confId (int, optional): Conformer ID. Defaults to -1.
+        atomlabel (bool, optional): Show all atomlabels. Defaults to False.
+
+    Returns:
+        Py3Dmol.view: 3D view object.
+    """
     width = 900
     height = 600
     p = py3Dmol.view(width=width, height=height)
@@ -68,7 +79,20 @@ def drawMolInsert(
     pos: tuple,
     xSize: float = 0.5,
     aspect: float = 0.33,
+    zorder: int = 5,
 ) -> plt.axes:
+    """Draw molecule in a subplot.
+
+    Args:
+        ax_below (plt.axes): Axes to draw molecule on top of.
+        mol (Chem.Mol): RDKit molecule to draw.
+        pos (tuple): (x0, y0) position of insert.
+        xSize (float, optional): Size of x dimension of insert. Defaults to 0.5.
+        aspect (float, optional): Aspect ratio of insert. Defaults to 0.33.
+
+    Returns:
+        plt.axes: Axes of insert.
+    """
     ax = ax_below.inset_axes([*pos, xSize, xSize * aspect])
     resolution = 1000
     im = Draw.MolToImage(
@@ -76,7 +100,7 @@ def drawMolInsert(
         size=(int(resolution * xSize), int(resolution * xSize * aspect)),
         options=dopts,
     )
-    ax.imshow(im, origin="lower")
+    ax.imshow(im, origin="lower", zorder=zorder)
     ax.axis("off")
     return ax
 
@@ -86,10 +110,21 @@ def addFrame(
     ax_below: plt.axes,
     linewidth: int = 6,
     edgecolor: str = "crimson",
-    nShadows: int = 20,
+    nShadows: int = 25,
     shadowLinewidth: float = 0.05,
-    molZorder: int = 5,
+    molZorder: int = 4,
 ) -> None:
+    """Draw Frame around axes.
+
+    Args:
+        ax_around (plt.axes): Axes to draw frame around.
+        ax_below (plt.axes): Axes to draw frame on.
+        linewidth (int, optional): Linewidth of frame. Defaults to 6.
+        edgecolor (str, optional): Color of frame. Defaults to "crimson".
+        nShadows (int, optional): Resolution of shadow. Defaults to 25.
+        shadowLinewidth (float, optional): Extend of shadow. Defaults to 0.05.
+        molZorder (int, optional): ZOrder of Mol. Defaults to 4.
+    """
     images = ax_around.get_images()
     assert len(images) == 1, f"Found {len(images)} images in {ax_around}, expected 1"
     img = images[0]
@@ -121,6 +156,12 @@ def addFrame(
 
 
 def plot_parity(ax: plt.axes, tick_base: int = 10, **kwargs) -> None:
+    """Make square plot with parity line.
+
+    Args:
+        ax (plt.axes): Axes to plot on.
+        tick_base (int, optional): Tick base. Defaults to 10.
+    """
     ax.set_aspect("equal")
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
@@ -152,6 +193,19 @@ def plot_residual_histogram(
     xlabel: str = "Residual (kcal/mol)",
     **kwargs,
 ) -> plt.axes:
+    """Plot Histogram insert of residuals.
+
+    Args:
+        ax (plt.axes): Axes to plot on.
+        x (np.ndarray): x data
+        y (np.ndarray): y data
+        loc (list, optional): Location of insert. Defaults to [0.58, 0.13, 0.4, 0.4].
+        bins (int, optional): Number of bins in histogram. Defaults to 15.
+        xlabel (str, optional): Label on x axis. Defaults to "Residual (kcal/mol)".
+
+    Returns:
+        plt.axes: _description_
+    """
     insert = ax.inset_axes(loc)
     diff = y - x
     insert.hist(diff, bins=bins, **kwargs)
