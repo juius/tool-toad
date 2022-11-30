@@ -100,7 +100,7 @@ def drawMolInsert(
         size=(int(resolution * xSize), int(resolution * xSize * aspect)),
         options=dopts,
     )
-    ax.imshow(im, origin="lower", zorder=zorder)
+    ax.imshow(im, origin="upper", zorder=zorder)
     ax.axis("off")
     return ax
 
