@@ -10,7 +10,7 @@ __version__ = "0.1"
 here = os.path.abspath(os.path.dirname(__file__))
 
 # Get the long description from the README file
-with open(os.path.join(here, "README.md")) as f:
+with open(os.path.join(here, "README.rst")) as f:
     long_description = f.read()
 
 short_description = "A collection of computational chemisty utilities."
