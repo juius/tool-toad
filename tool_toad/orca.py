@@ -23,7 +23,7 @@ def get_header(options, memory, n_cores):
 def write_orca_input(
     mol,
     options,
-    spin=0,
+    multiplicity=1,
     confId=0,
     memory=4,
     n_cores=1,
@@ -34,7 +34,7 @@ def write_orca_input(
     inputstr = header + 2 * "\n"
 
     # charge, spin, and coordinate section
-    inputstr += f"*xyz {Chem.GetFormalCharge(mol)} {spin} \n"
+    inputstr += f"*xyz {Chem.GetFormalCharge(mol)} {multiplicity} \n"
     for atom_str, coord in zip(atom_strs, coordinates):
         inputstr += (
             f"{atom_str}".ljust(5)
