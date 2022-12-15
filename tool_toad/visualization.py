@@ -8,6 +8,36 @@ from matplotlib import patches
 from rdkit import Chem
 from rdkit.Chem import Draw
 
+# plt.style.use('./paper.mplstyle')
+
+def oneColumnFig(square: bool = False):
+    """Create a figure that is one column wide.
+
+    Args:
+        square (bool, optional): Square figure. Defaults to False.
+
+    Returns:
+        (fig, ax): Figure and axes.
+    """
+    if square:
+        size = (6, 6)
+    else:
+        size = (6, 4.187)
+    fig, ax = plt.subplots(figsize=size)
+    return fig, ax
+
+def twoColumnFig():
+    """Create a figure that is two column wide.
+
+    Args:
+        square (bool, optional): Square figure. Defaults to False.
+
+    Returns:
+        (fig, ax): Figure and axes.
+    """
+    size = (12, 4.829)
+    fig, ax = plt.subplots(figsize=size)
+    return fig, ax
 
 def draw3d(
     mols: list, overlay: bool = False, confId: int = -1, atomlabel: bool = False
