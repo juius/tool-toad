@@ -20,7 +20,7 @@ legend.fontsize: small
 
 # Figure
 figure.figsize: 11.9, 4.8
-figure.dpi: 100 
+figure.dpi: 100
 
 # SaveFig
 savefig.dpi: 300

@@ -10,6 +10,7 @@ from rdkit.Chem import Draw
 
 # plt.style.use('./paper.mplstyle')
 
+
 def oneColumnFig(square: bool = False):
     """Create a figure that is one column wide.
 
@@ -26,6 +27,7 @@ def oneColumnFig(square: bool = False):
     fig, ax = plt.subplots(figsize=size)
     return fig, ax
 
+
 def twoColumnFig():
     """Create a figure that is two column wide.
 
@@ -38,6 +40,7 @@ def twoColumnFig():
     size = (12, 4.829)
     fig, ax = plt.subplots(figsize=size)
     return fig, ax
+
 
 def draw3d(
     mols: list, overlay: bool = False, confId: int = -1, atomlabel: bool = False

@@ -50,7 +50,7 @@ repos:
         language: python
         types: [python]
 
-  - repo: https://gitlab.com/pycqa/flake8
+  - repo: https://github.com/pycqa/flake8
     rev: 3.8.4
     hooks:
       - id: flake8
@@ -63,6 +63,17 @@ repos:
           # ignore Line break occurred before a binary operator (W503)
           "--ignore=E501,E203,W503",
         ]
+
+  - repo: https://github.com/myint/docformatter
+    rev: v1.4
+    hooks:
+      - id: docformatter
+        name: docformatter
+        description: 'Formats docstrings to follow PEP 257.'
+        entry: docformatter
+        args: [-i]
+        language: python
+        types: [python]
 
   - repo: local
     hooks:

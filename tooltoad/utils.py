@@ -1,5 +1,6 @@
 import subprocess
 
+
 def stream(cmd, cwd=None, shell=True):
     """Execute command in directory, and stream stdout."""
     popen = subprocess.Popen(
