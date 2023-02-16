@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tooltoad"
+version = "1.0.0"
+description = "A collection of computational chemisty utilities"
+readme = "README.rst"
+requires-python = ">=3.6"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "rdkit",
+    "hide_warnings",
+    "py3Dmol",
+    "tabulate"
+]

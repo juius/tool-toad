@@ -93,7 +93,6 @@ def draw3d(
         )
     p.zoomTo()
     p.show()
-    return p
 
 
 dopts = Chem.Draw.rdMolDraw2D.MolDrawOptions()
