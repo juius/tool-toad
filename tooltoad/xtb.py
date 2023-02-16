@@ -88,7 +88,6 @@ def read_opt_structure(lines: List[str]):
 
 
 def read_energy(lines: List[str]):
-
     """Reads energy from xTB output."""
 
     for line in reversed(list(lines)):
