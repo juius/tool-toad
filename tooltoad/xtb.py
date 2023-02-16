@@ -40,9 +40,7 @@ def xtb_calculate(
     # Creat TMP directory
     tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="XTBOPT_")
     tmp_scr = Path(tempdir.name)
-
     xyz_file = write_xyz(atoms, coords, tmp_scr)
-
     # clean xtb method option
     for k, value in options.items():
         if "gfn" in k.lower():
@@ -57,16 +55,13 @@ def xtb_calculate(
             cmd += f"--{key} "
         else:
             cmd += f"--{key} {str(value)} "
-
     result = run_xtb((cmd, xyz_file))
-
     if not normal_termination(result):
         _logger.warning("xTB did not terminate normally")
         _logger.info("".join(result))
         return atoms, coords, math.nan
     else:
         _logger.debug("".join(result))
-
     if "opt" in options:
         atoms, coords = read_opt_structure(result)
     energy = read_energy(result)
@@ -130,11 +125,9 @@ def read_opt_structure(lines: List[str]):
     for i, l in reversed(list(enumerate(lines))):
         if "final structure" in l:
             break
-
     n_atoms = int(lines[i + 2].rstrip())
     start = i + 4
     end = start + n_atoms
-
     atoms = []
     coords = []
     for line in lines[start:end]:
@@ -147,7 +140,6 @@ def read_opt_structure(lines: List[str]):
 
 def read_energy(lines: List[str]):
     """Reads energy from xTB output."""
-
     for line in reversed(list(lines)):
         if "TOTAL ENERGY" in line:
             energy = float(line.split()[-3])
