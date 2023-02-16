@@ -19,9 +19,9 @@ short_description = "A collection of computational chemisty utilities."
 setuptools.setup(
     name="tool_toad",
     version=__version__,
-    maintainer="Juls",
+    maintainer="Julius",
     description=short_description,
     long_description=long_description,
     url="https://github.com/juius/tool_toad",
-    python_requires=">=3.9",
+    python_requires=">=3.7",
 )

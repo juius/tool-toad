@@ -156,7 +156,7 @@ def xtb_calculate(
 
 
 @hide_warnings
-def ac2mol(atoms, coords):
+def ac2mol(atoms: List[str], coords: List[list]):
     """Converts atom symbols and coordinates to RDKit molecule."""
     xyz = ac2xyz(atoms, coords)
     rdkit_mol = Chem.MolFromXYZBlock(xyz)
@@ -173,7 +173,7 @@ def ac2mol(atoms, coords):
     return rdkit_mol
 
 
-def ac2xyz(atoms, coords):
+def ac2xyz(atoms: List[str], coords: List[list]):
     """Converts atom symbols and coordinates to xyz string."""
     xyz = f"{len(atoms)}\n\n"
     for atom, coord in zip(atoms, coords):

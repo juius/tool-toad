@@ -99,11 +99,11 @@ def draw3d(
 dopts = Chem.Draw.rdMolDraw2D.MolDrawOptions()
 dopts.prepareMolsForDrawing = True
 dopts.centreMoleculesBeforeDrawing = True
+dopts.drawMolsSameScale = True
 dopts.legendFontSize = 18
 dopts.minFontSize = 30
 dopts.padding = 0.05
 dopts.atomLabelFontSize = 40
-dopts.bondLineWidth = 5
 
 
 def drawMolInsert(
