@@ -16,6 +16,64 @@ XTB_CMD = "xtb"
 _logger = logging.getLogger("xtb")
 
 
+def xtb_calculate(
+    atoms: List[str],
+    coords: List[list],
+    options: dict,
+    scr: str = ".",
+    n_cores: int = 1,
+) -> tuple:
+    """Runs xTB calculation.
+
+    Args:
+        atoms (List[str]): List of atom symbols.
+        coords (List[list]): 3xN list of atom coordinates.
+        options (dict): xTB calculation options.
+        scr (str, optional): Path to scratch directory. Defaults to '.'.
+        n_cores (int, optional): Number of cores used in calculation. Defaults to 1.
+
+    Returns:
+        tuple: (atoms, coords, energy)
+    """
+    # Set Threads
+    set_threads(n_cores)
+    # Creat TMP directory
+    tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="XTBOPT_")
+    tmp_scr = Path(tempdir.name)
+
+    xyz_file = write_xyz(atoms, coords, tmp_scr)
+
+    # clean xtb method option
+    for k, value in options.items():
+        if "gfn" in k.lower():
+            if value is not None and value is not True:
+                options[k + str(value)] = None
+                del options[k]
+                break
+    # Options to xTB command
+    cmd = f"{XTB_CMD} --norestart --verbose --parallel {n_cores} "
+    for key, value in options.items():
+        if value is None or value is True:
+            cmd += f"--{key} "
+        else:
+            cmd += f"--{key} {str(value)} "
+
+    result = run_xtb((cmd, xyz_file))
+
+    if not normal_termination(result):
+        _logger.warning("xTB did not terminate normally")
+        _logger.info("".join(result))
+        return atoms, coords, math.nan
+    else:
+        _logger.debug("".join(result))
+
+    if "opt" in options:
+        atoms, coords = read_opt_structure(result)
+    energy = read_energy(result)
+
+    return atoms, coords, energy
+
+
 def set_threads(n_cores: int):
     """Set threads and procs environment variables."""
     _ = list(stream("ulimit -s unlimited"))
@@ -95,64 +153,6 @@ def read_energy(lines: List[str]):
             energy = float(line.split()[-3])
             return energy
     return math.nan
-
-
-def xtb_calculate(
-    atoms: List[str],
-    coords: List[list],
-    options: dict,
-    scr: str = ".",
-    n_cores: int = 1,
-) -> tuple:
-    """Runs xTB calculation.
-
-    Args:
-        atoms (List[str]): List of atom symbols.
-        coords (List[list]): 3xN list of atom coordinates.
-        options (dict): xTB calculation options.
-        scr (str, optional): Path to scratch directory. Defaults to '.'.
-        n_cores (int, optional): Number of cores used in calculation. Defaults to 1.
-
-    Returns:
-        tuple: (atoms, coords, energy)
-    """
-    # Set Threads
-    set_threads(n_cores)
-    # Creat TMP directory
-    tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="XTBOPT_")
-    tmp_scr = Path(tempdir.name)
-
-    xyz_file = write_xyz(atoms, coords, tmp_scr)
-
-    # clean xtb method option
-    for k, value in options.items():
-        if "gfn" in k.lower():
-            if value is not None and value is not True:
-                options[k + str(value)] = None
-                del options[k]
-                break
-    # Options to xTB command
-    cmd = f"{XTB_CMD} --norestart --verbose --parallel {n_cores} "
-    for key, value in options.items():
-        if value is None or value is True:
-            cmd += f"--{key} "
-        else:
-            cmd += f"--{key} {str(value)} "
-
-    result = run_xtb((cmd, xyz_file))
-
-    if not normal_termination(result):
-        _logger.warning("xTB did not terminate normally")
-        _logger.info("".join(result))
-        return atoms, coords, math.nan
-    else:
-        _logger.debug("".join(result))
-
-    if "opt" in options:
-        atoms, coords = read_opt_structure(result)
-    energy = read_energy(result)
-
-    return atoms, coords, energy
 
 
 @hide_warnings
