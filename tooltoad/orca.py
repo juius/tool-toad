@@ -1,18 +1,98 @@
 import logging
-import math
+import os
 import tempfile
+import uuid
 from pathlib import Path
+from typing import List
+
+import tomli
 
 from tooltoad.utils import stream
 
 _logger = logging.getLogger("orca")
-_logger.setLevel(logging.INFO)
-
-ORCA_CMD = "/software/kemi/Orca/orca_5_0_1_linux_x86-64_openmpi411/orca"
-SET_ENV = "export PATH=/software/kemi/Orca/orca_5_0_1_linux_x86-64_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/bin:$PATH; export LD_LIBRARY_PATH=/software/kemi/openmpi/openmpi-4.1.1/lib:$LD_LIBRARY_PATH"
 
 
-def get_header(options, memory, n_cores):
+with open(os.path.dirname(__file__) + "/../config.toml", "rb") as f:
+    config = tomli.load(f)
+
+ORCA_CMD = config["orca"]["cmd"]
+SET_ENV = config["orca"]["setenv"]
+
+
+def orca_calculate(
+    atoms: List[str],
+    coords: List[list],
+    charge: int = 0,
+    multiplicity: int = 1,
+    options: dict = {},
+    scr: str = ".",
+    n_cores: int = 1,
+    memory: int = 8,
+    keep_files=False,
+) -> tuple:
+    """Runs ORCA calculation.
+
+    Args:
+        atoms (List[str]): List of atom symbols.
+        coords (List[list]): 3xN list of atom coordinates.
+        options (dict): ORCA calculation options.
+        scr (str, optional): Path to scratch directory. Defaults to '.'.
+        n_cores (int, optional): Number of cores used in calculation. Defaults to 1.
+
+    Returns:
+        tuple: (atoms, coords, energy)
+    """
+
+    if keep_files:
+        dir_name = str(Path(scr) / f"ORCA_{uuid.uuid4().hex}")
+        os.makedirs(dir_name)
+    else:
+        tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="ORCA_")
+        dir_name = tempdir.name
+    tmp_scr = Path(dir_name)
+
+    with open(tmp_scr / "input.inp", "w") as f:
+        f.write(
+            write_orca_input(
+                atoms,
+                coords,
+                charge,
+                multiplicity,
+                options,
+                memory=memory,
+                n_cores=n_cores,
+            )
+        )
+
+    # cmd = f'{SET_ENV}; {ORCA_CMD} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
+    cmd = f'{SET_ENV} /bin/bash -c "{ORCA_CMD} input.inp "--use-hwthread-cpus" | tee orca.out"'
+    _logger.debug(f"Running Orca as: {cmd}")
+
+    # Run Orca, capture an log output
+    generator = stream(cmd, cwd=tmp_scr)
+    lines = []
+    for line in generator:
+        lines.append(line)
+        _logger.debug(line.rstrip("\n"))
+
+    if normal_termination(lines):
+        _logger.debug("Orca calculation terminated normally.")
+        properties = ["electronic_energy", "mulliken_charges", "loewdin_charges"]
+        if "hirshfeld" in [k.lower() for k in options.keys()]:
+            properties.append("hirshfeld_charges")
+        if "opt" in [k.lower() for k in options.keys()]:
+            properties.append("opt_structure")
+        results = get_orca_results(lines, properties=properties)
+    else:
+        _logger.warning("Orca calculation did not terminate normally.")
+        _logger.info("".join(lines))
+        results = {}
+    if keep_files:
+        results["calc_dir"] = dir_name
+    return results
+
+
+def get_header(options: dict, memory: int, n_cores: int) -> str:
     """Write Orca header."""
 
     header = "# Automatically generated ORCA input" + 2 * "\n"
@@ -20,7 +100,7 @@ def get_header(options, memory, n_cores):
     header += "# Number of cores\n"
     header += f"%pal nprocs {n_cores} end\n"
     header += "# RAM per core\n"
-    header += f"%maxcore {1024 * memory}" + 2 * "\n"
+    header += f"%maxcore {int(1024 * memory/n_cores)}" + 2 * "\n"
 
     for key, value in options.items():
         if (value is None) or (not value):
@@ -32,14 +112,16 @@ def get_header(options, memory, n_cores):
 
 
 def write_orca_input(
-    atoms,
-    coords,
-    options,
-    charge=0,
-    multiplicity=1,
-    memory=4,
-    n_cores=1,
-):
+    atoms: List[str],
+    coords: List[list],
+    charge: int = 0,
+    multiplicity: int = 1,
+    options: dict = {},
+    memory: int = 4,
+    n_cores: int = 1,
+) -> str:
+    """Write Orca input file."""
+
     header = get_header(options, memory, n_cores)
     inputstr = header + 2 * "\n"
 
@@ -57,21 +139,31 @@ def write_orca_input(
     return inputstr
 
 
-def normal_termination(lines):
+def normal_termination(lines: List[str]) -> bool:
+    """Check if ORCA terminated normally."""
     for line in reversed(lines):
         if line.strip() == "****ORCA TERMINATED NORMALLY****":
             return True
     return False
 
 
-def read_final_sp_energy(lines):
+def read_final_sp_energy(lines: List[str]) -> float:
+    """Read final single point energy from ORCA output."""
     for line in reversed(lines):
         if "FINAL SINGLE POINT ENERGY" in line:
             return float(line.split()[-1])
     return None
 
 
-def read_opt_structure(lines):
+def read_opt_structure(lines: List[str]) -> tuple:
+    """Read optimized structure from ORCA output.
+
+    Args:
+        lines (List[str]): ORCA output as a list of strings.
+
+    Returns:
+        tuple: (atoms, coords)
+    """
     rev_start_idx = 2  # Just a dummy value
     for i, line in enumerate(reversed(lines)):
         if "CARTESIAN COORDINATES (ANGSTROEM)" in line:
@@ -91,14 +183,105 @@ def read_opt_structure(lines):
     return atoms, coords
 
 
-def get_orca_results(lines, properties=["electronic_energy"]):
+def read_mulliken_charges(lines: List[str]) -> list:
+    """Read Mulliken charges from ORCA output.
 
+    Args:
+        lines (List[str]): ORCA output as a list of strings.
+
+    Returns:
+        list: Mulliken charges.
+    """
+    rev_start_idx = 2  # Just a dummy value
+    for i, line in enumerate(reversed(lines)):
+        if "MULLIKEN ATOMIC CHARGES" in line:
+            rev_start_idx = i - 1
+            break
+    mulliken_charges = []
+    for line in lines[-rev_start_idx:]:
+        line = line.strip()
+        if "Sum of atomic charges" in line:
+            break
+        charge = float(line.split()[-1])
+        mulliken_charges.append(charge)
+    return mulliken_charges
+
+
+def read_loewdin_charges(lines: List[str]) -> list:
+    """Read Loewdin charges from ORCA output.
+
+    Args:
+        lines (List[str]): ORCA output as a list of strings.
+
+    Returns:
+        list: Loewdin charges.
+    """
+    rev_start_idx = 2  # Just a dummy value
+    for i, line in enumerate(reversed(lines)):
+        if "LOEWDIN ATOMIC CHARGES" in line:
+            rev_start_idx = i - 1
+            break
+    loewdin_charges = []
+    for line in lines[-rev_start_idx:]:
+        line = line.strip()
+        if len(line) == 0:
+            break
+        charge = float(line.split()[-1])
+        loewdin_charges.append(charge)
+    return loewdin_charges
+
+
+def read_hirshfeld_charges(lines: List[str]) -> list:
+    """Read Hirshfeld charges from ORCA output.
+
+    Args:
+        lines (List[str]): ORCA output as a list of strings.
+
+    Returns:
+        list: Hirshfeld charges.
+    """
+    rev_start_idx = 2  # Just a dummy value
+    for i, line in enumerate(reversed(lines)):
+        if "HIRSHFELD ANALYSIS" in line:
+            rev_start_idx = i - 6
+            break
+    hirshfeld_charges = []
+    for line in lines[-rev_start_idx:]:
+        line = line.strip()
+        if len(line) == 0:
+            break
+        charge = float(line.split()[-2])
+        hirshfeld_charges.append(charge)
+    return hirshfeld_charges
+
+
+def get_orca_results(
+    lines: List[str],
+    properties: List[str] = [
+        "electronic_energy",
+        "mulliken_charges",
+        "loewdin_charges",
+    ],
+) -> dict:
+    """Read results from ORCA output.
+
+    Args:
+        lines (List[str]): ORCA output as a list of strings.
+        properties (List[str], optional): Properties. Defaults to ["electronic_energy"].
+
+
+    Returns:
+        dict: Results dictionary.
+    """
     assert isinstance(lines, list), "Input lines must be a list of strings"
 
     results = {}
     reader = {
         "electronic_energy": read_final_sp_energy,
         "opt_structure": read_opt_structure,
+        "mulliken_charges": read_mulliken_charges,
+        "loewdin_charges": read_loewdin_charges,
+        "hirshfeld_charges": read_hirshfeld_charges,
     }
 
     if not normal_termination(lines):
@@ -108,32 +291,3 @@ def get_orca_results(lines, properties=["electronic_energy"]):
         results[property] = reader[property](lines)
 
     return results
-
-
-def orca_calculate(atoms, coords, options, scr, n_cores=1):
-
-    tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="ORCA_")
-    tmp_scr = Path(tempdir.name)
-
-    with open(tmp_scr / "input.inp", "w") as f:
-        f.write(
-            write_orca_input(atoms, coords, options, memory=n_cores, n_cores=n_cores)
-        )
-
-    cmd = f"{SET_ENV}; {ORCA_CMD} input.inp | tee output.out"
-    _logger.debug(f"Running Orca as: {cmd}")
-    out = list(stream(cmd, cwd=tmp_scr))
-
-    if normal_termination(out):
-        _logger.info("Orca calculation terminated normally.")
-        results = get_orca_results(
-            out, properties=["electronic_energy", "opt_structure"]
-        )
-        energy = results["electronic_energy"]
-        atoms, coords = results["opt_structure"]
-    else:
-        _logger.warning("Orca calculation did not terminate normally.")
-        _logger.info("".join(out))
-        energy = math.nan
-
-    return atoms, coords, energy
