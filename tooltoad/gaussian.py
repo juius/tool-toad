@@ -1,12 +1,16 @@
 import os
 
 import numpy as np
+import tomli
 from rdkit import Chem
 
 # from ppqm.gaussian import get_optimized_structure, get_frequencies
 # from ppqm.chembridge import get_atom_int
 
-__GAUXTB_CMD__ = "/groups/kemi/julius/opt/xtb_gaussian/xtb_external.py gbsa=methanol"
+with open(os.path.dirname(__file__) + "/../config.toml", "rb") as f:
+    config = tomli.load(f)
+
+GAUXTB_CMD = config["gaussian"]["gauxtb"]
 
 GAUSSIAN_COMMANDS = {
     "sp": [
@@ -46,10 +50,10 @@ GAUSSIAN_COMMANDS = {
         "PDens=10\nPrintSpheres\n",
     ],
     "ts_opt_xtb": [
-        "opt=(ts,calcall,noeigentest,nomicro,MaxStep=2) external='{__GAUXTB_CMD__}'"
+        "opt=(ts,calcall,noeigentest,nomicro,MaxStep=2) external='{GAUXTB_CMD}'"
     ],
-    "opt_xtb": [f"opt external='{__GAUXTB_CMD__}'"],
-    "freq_xtb": [f"freq external='{__GAUXTB_CMD__}'"],
+    "opt_xtb": [f"opt external='{GAUXTB_CMD}'"],
+    "freq_xtb": [f"freq external='{GAUXTB_CMD}'"],
 }
 
 

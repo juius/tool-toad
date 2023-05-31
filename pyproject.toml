@@ -11,8 +11,8 @@ requires-python = ">=3.6"
 dependencies = [
     "numpy",
     "matplotlib",
-    "rdkit",
     "hide_warnings",
     "py3Dmol",
-    "tabulate"
+    "tabulate",
+    "tomli"
 ]

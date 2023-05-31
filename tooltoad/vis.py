@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -8,7 +9,9 @@ from matplotlib import patches
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-# plt.style.use('./paper.mplstyle')
+# load matplotlib style
+plt.style.use(os.path.dirname(__file__) + "/data/paper.mplstyle")
+PAPER = Path("/groups/kemi/julius/opt/tm-catalyst-paper/figures")
 
 
 def oneColumnFig(square: bool = False):
@@ -28,7 +31,7 @@ def oneColumnFig(square: bool = False):
     return fig, ax
 
 
-def twoColumnFig():
+def twoColumnFig(**kwargs):
     """Create a figure that is two column wide.
 
     Args:
@@ -38,12 +41,16 @@ def twoColumnFig():
         (fig, ax): Figure and axes.
     """
     size = (12, 4.829)
-    fig, ax = plt.subplots(figsize=size)
-    return fig, ax
+    fig, axs = plt.subplots(figsize=size, **kwargs)
+    return fig, axs
 
 
 def draw3d(
-    mols: list, overlay: bool = False, confId: int = -1, atomlabel: bool = False
+    mols: list,
+    transparent: bool = True,
+    overlay: bool = False,
+    confId: int = -1,
+    atomlabel: bool = False,
 ):
     """Draw 3D structures in Jupyter notebook using py3Dmol.
 
@@ -80,6 +87,7 @@ def draw3d(
                 mb = Chem.MolToMolBlock(mol, confId=confId)
                 p.addModel(mb, "sdf")
     p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
+    p.setBackgroundColor("0xeeeeee", int(~transparent))
     if atomlabel:
         p.addPropertyLabels("index")
     else:
@@ -245,3 +253,31 @@ def plot_residual_histogram(
     insert.set_xlabel(xlabel)
     insert.set_ylabel("Count")
     return insert
+
+
+def align_axes(axes, align_values):
+
+    # keep format of first axes
+    nTicks = len(axes[0].get_yticks())
+
+    idx1 = (np.abs(axes[0].get_yticks() - align_values[0][0])).argmin()
+    shiftAx1 = axes[0].get_yticks()[idx1] - align_values[0][0]
+    ticksAx1 = axes[0].get_yticks() - shiftAx1
+    dy1 = np.mean(
+        [
+            axes[0].get_yticks()[i] - axes[0].get_yticks()[i - 1]
+            for i in range(1, len(axes[0].get_yticks()))
+        ]
+    )
+    ylim1 = (ticksAx1[1] - dy1 / 2, ticksAx1[-2] + dy1 / 2)
+    axes[0].set_yticks(ticksAx1)
+
+    for i, ax in enumerate(axes[1:]):
+        tmp = np.linspace(align_values[1][i + 1], align_values[0][i + 1], nTicks - 2)
+        dy2 = np.mean([tmp[i] - tmp[i - 1] for i in range(1, len(tmp))])
+        ticksAx2 = np.linspace(tmp[0] - dy2, tmp[-1] + dy2, nTicks)
+        ylim2 = (ticksAx2[1] - dy2 / 2, ticksAx2[-2] + dy2 / 2)
+        ax.set_yticks(ticksAx2)
+        ax.set_ylim(ylim2)
+
+    axes[0].set_ylim(ylim1)
