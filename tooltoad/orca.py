@@ -275,18 +275,18 @@ def get_orca_results(
     """
     assert isinstance(lines, list), "Input lines must be a list of strings"
 
-    results = {}
     reader = {
-        "electronic_energy": read_final_sp_energy,
-        "opt_structure": read_opt_structure,
-        "mulliken_charges": read_mulliken_charges,
-        "loewdin_charges": read_loewdin_charges,
-        "hirshfeld_charges": read_hirshfeld_charges,
+        "electronic_energy": read_final_sp_energy,  # always read this
+        "opt_structure": read_opt_structure,  # optional
+        "mulliken_charges": read_mulliken_charges,  # always read this
+        "loewdin_charges": read_loewdin_charges,  # always read this
+        "hirshfeld_charges": read_hirshfeld_charges,  # optional
     }
 
     if not normal_termination(lines):
         raise ValueError("ORCA did not terminate normally")
 
+    results = {}
     for property in properties:
         results[property] = reader[property](lines)
 
