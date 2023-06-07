@@ -1,5 +1,6 @@
 import os
 import subprocess
+import warnings
 from typing import List
 
 import networkx as nx
@@ -28,6 +29,14 @@ def stream(cmd, cwd=None, shell=True):
     yield stderr
 
     return
+
+
+def check_executable(executable):
+    """Check if executable is in PATH."""
+    results = stream(f"which {executable}")
+    result = list(results)[0]
+    if result.startswith("which: no"):
+        warnings.warn(f"Executable {executable} not found in PATH")
 
 
 @hide_warnings

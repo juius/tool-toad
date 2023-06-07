@@ -7,12 +7,14 @@ from typing import List, Tuple
 
 import tomli
 
-from tooltoad.utils import stream
+from tooltoad.utils import check_executable, stream
 
 with open(os.path.dirname(__file__) + "/../config.toml", "rb") as f:
     config = tomli.load(f)
 
 XTB_CMD = config["xtb"]["cmd"]
+
+check_executable(XTB_CMD)
 
 _logger = logging.getLogger("xtb")
 

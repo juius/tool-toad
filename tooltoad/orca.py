@@ -7,7 +7,7 @@ from typing import List
 
 import tomli
 
-from tooltoad.utils import stream
+from tooltoad.utils import check_executable, stream
 
 _logger = logging.getLogger("orca")
 
@@ -17,6 +17,8 @@ with open(os.path.dirname(__file__) + "/../config.toml", "rb") as f:
 
 ORCA_CMD = config["orca"]["cmd"]
 SET_ENV = config["orca"]["setenv"]
+
+check_executable(ORCA_CMD)
 
 
 def orca_calculate(
