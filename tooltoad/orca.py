@@ -1,7 +1,6 @@
 import logging
 import os
 import tempfile
-import uuid
 from pathlib import Path
 from typing import List
 
@@ -30,7 +29,7 @@ def orca_calculate(
     scr: str = ".",
     n_cores: int = 1,
     memory: int = 8,
-    keep_files=False,
+    output_dir=None,
 ) -> tuple:
     """Runs ORCA calculation.
 
@@ -45,8 +44,8 @@ def orca_calculate(
         tuple: (atoms, coords, energy)
     """
 
-    if keep_files:
-        dir_name = str(Path(scr) / f"ORCA_{uuid.uuid4().hex}")
+    if output_dir:
+        dir_name = str(Path(scr) / output_dir)
         os.makedirs(dir_name)
     else:
         tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="ORCA_")
@@ -89,7 +88,7 @@ def orca_calculate(
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("".join(lines))
         results = {}
-    if keep_files:
+    if output_dir:
         results["calc_dir"] = dir_name
     return results
 
