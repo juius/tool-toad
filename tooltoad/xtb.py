@@ -76,7 +76,13 @@ def xtb_calculate(
         atoms, coords = read_opt_structure(result)
     energy = read_energy(result)
 
-    return atoms, coords, energy
+    results = {
+        "atoms": atoms,
+        "opt_coords": coords,
+        "electronic_energy": energy,
+    }
+    # return atoms, coords, electronic_energy
+    return results
 
 
 def set_threads(n_cores: int):

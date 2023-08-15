@@ -14,5 +14,6 @@ dependencies = [
     "hide_warnings",
     "py3Dmol",
     "tabulate",
-    "tomli"
+    "tomli",
+    "networkx"
 ]

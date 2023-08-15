@@ -26,6 +26,7 @@ def orca_calculate(
     charge: int = 0,
     multiplicity: int = 1,
     options: dict = {},
+    xtra_inp_str: str = None,
     scr: str = ".",
     n_cores: int = 1,
     memory: int = 8,
@@ -60,6 +61,7 @@ def orca_calculate(
                 charge,
                 multiplicity,
                 options,
+                xtra_inp_str=xtra_inp_str,
                 memory=memory,
                 n_cores=n_cores,
             )
@@ -93,7 +95,7 @@ def orca_calculate(
     return results
 
 
-def get_header(options: dict, memory: int, n_cores: int) -> str:
+def get_header(options: dict, xtra_inp_str: str, memory: int, n_cores: int) -> str:
     """Write Orca header."""
 
     header = "# Automatically generated ORCA input" + 2 * "\n"
@@ -109,6 +111,9 @@ def get_header(options: dict, memory: int, n_cores: int) -> str:
         else:
             header += f"! {key}({value}) \n"
 
+    if xtra_inp_str:
+        header += "\n" + xtra_inp_str + "\n"
+
     return header
 
 
@@ -118,12 +123,13 @@ def write_orca_input(
     charge: int = 0,
     multiplicity: int = 1,
     options: dict = {},
+    xtra_inp_str: str = "",
     memory: int = 4,
     n_cores: int = 1,
 ) -> str:
     """Write Orca input file."""
 
-    header = get_header(options, memory, n_cores)
+    header = get_header(options, xtra_inp_str, memory, n_cores)
     inputstr = header + 2 * "\n"
 
     # charge, spin, and coordinate section
@@ -290,5 +296,8 @@ def get_orca_results(
     results = {}
     for property in properties:
         results[property] = reader[property](lines)
+
+    if "opt_structure" in properties:
+        results["atoms"], results["opt_coords"] = results["opt_structure"]
 
     return results
