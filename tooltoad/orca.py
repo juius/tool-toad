@@ -4,20 +4,13 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-import tomli
-
 from tooltoad.utils import check_executable, stream
 
 _logger = logging.getLogger("orca")
 
-
-with open(os.path.dirname(__file__) + "/../config.toml", "rb") as f:
-    config = tomli.load(f)
-
-ORCA_CMD = config["orca"]["cmd"]
-SET_ENV = config["orca"]["setenv"]
-
-check_executable(ORCA_CMD)
+# see https://www.orcasoftware.de/tutorials_orca/first_steps/parallel.html
+ORCA_CMD = "/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411/orca"
+SET_ENV = 'env - PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/bin:$PATH" LD_LIBRARY_PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/lib:$LD_LIBRARY_PATH"'
 
 
 def orca_calculate(
@@ -31,6 +24,8 @@ def orca_calculate(
     n_cores: int = 1,
     memory: int = 8,
     output_dir=None,
+    orca_cmd: str = ORCA_CMD,
+    set_env: str = SET_ENV,
 ) -> tuple:
     """Runs ORCA calculation.
 
@@ -44,7 +39,7 @@ def orca_calculate(
     Returns:
         tuple: (atoms, coords, energy)
     """
-
+    check_executable(orca_cmd)
     if output_dir:
         dir_name = str(Path(scr) / output_dir)
         os.makedirs(dir_name)
@@ -67,8 +62,8 @@ def orca_calculate(
             )
         )
 
-    # cmd = f'{SET_ENV}; {ORCA_CMD} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
-    cmd = f'{SET_ENV} /bin/bash -c "{ORCA_CMD} input.inp "--use-hwthread-cpus" | tee orca.out"'
+    # cmd = f'{set_env}; {orca_cmd} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
+    cmd = f'{set_env} /bin/bash -c "{orca_cmd} input.inp "--use-hwthread-cpus" | tee orca.out"'
     _logger.debug(f"Running Orca as: {cmd}")
 
     # Run Orca, capture an log output

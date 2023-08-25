@@ -5,18 +5,10 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
-import tomli
-
 from tooltoad.utils import check_executable, stream
 
-with open(os.path.dirname(__file__) + "/../config.toml", "rb") as f:
-    config = tomli.load(f)
-
-XTB_CMD = config["xtb"]["cmd"]
-
-check_executable(XTB_CMD)
-
 _logger = logging.getLogger("xtb")
+XTB_CMD = "xtb"
 
 
 def xtb_calculate(
@@ -28,6 +20,7 @@ def xtb_calculate(
     scr: str = ".",
     n_cores: int = 1,
     detailed_input: dict = None,
+    xtb_cmd: str = XTB_CMD,
 ) -> tuple:
     """Runs xTB calculation.
 
@@ -42,6 +35,7 @@ def xtb_calculate(
     Returns:
         tuple: (atoms, coords, energy)
     """
+    check_executable(xtb_cmd)
     # Set Threads
     set_threads(n_cores)
     # Creat TMP directory
@@ -57,7 +51,7 @@ def xtb_calculate(
                 break
 
     # Options to xTB command
-    cmd = f"{XTB_CMD} --chrg {charge} --uhf {int(0.5*(multiplicity-1))} --norestart --verbose --parallel {n_cores} "
+    cmd = f"{xtb_cmd} --chrg {charge} --uhf {int(0.5*(multiplicity-1))} --norestart --verbose --parallel {n_cores} "
     for key, value in options.items():
         if value is None or value is True:
             cmd += f"--{key} "
