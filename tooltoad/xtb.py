@@ -76,6 +76,10 @@ def xtb_calculate(
     results = read_xtb_results(lines)
     if "hess" in options:
         results.update(read_thermodynamics(lines))
+    if "grad" in options:
+        with open(tmp_scr / "mol.engrad", "r") as f:
+            grad_lines = f.readlines()
+        results["grad"] = read_gradients(grad_lines)
     results["atoms"] = atoms
     results["coords"] = coords
     if "opt" in options:
@@ -193,6 +197,23 @@ def read_thermodynamics(lines: List[str]):
                 tmp = line.strip(":").strip().strip("->").split()[:-1]
                 thermo_properties[" ".join(tmp[:-1])] = float(tmp[-1])
     return thermo_properties
+
+
+def read_gradients(lines: List[str]):
+    """Read gradients from engrad file."""
+    gradients = []
+    gradient_idx = np.nan
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if "gradient" in line:
+            gradient_idx = i
+        if i > (gradient_idx + 1):
+            if line.startswith("#"):
+                gradient_idx = np.nan
+                break
+            gradients.append(float(line))
+    gradients = np.asarray(gradients)
+    return gradients.reshape(-1, 3)
 
 
 def read_xtb_results(lines: List[str]):
