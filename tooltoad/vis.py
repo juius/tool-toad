@@ -51,6 +51,7 @@ def draw3d(
     overlay: bool = False,
     confId: int = -1,
     atomlabel: bool = False,
+    kekulize=True,
 ):
     """Draw 3D structures in Jupyter notebook using py3Dmol.
 
@@ -81,10 +82,10 @@ def draw3d(
         elif isinstance(mol, Chem.rdchem.Mol):  # if rdkit.mol
             if overlay:
                 for conf in mol.GetConformers():
-                    mb = Chem.MolToMolBlock(mol, confId=conf.GetId())
+                    mb = Chem.MolToMolBlock(mol, confId=conf.GetId(), kekulize=kekulize)
                     p.addModel(mb, "sdf")
             else:
-                mb = Chem.MolToMolBlock(mol, confId=confId)
+                mb = Chem.MolToMolBlock(mol, confId=confId, kekulize=kekulize)
                 p.addModel(mb, "sdf")
     p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
     p.setBackgroundColor("0xeeeeee", int(~transparent))
@@ -256,7 +257,6 @@ def plot_residual_histogram(
 
 
 def align_axes(axes, align_values):
-
     # keep format of first axes
     nTicks = len(axes[0].get_yticks())
 
