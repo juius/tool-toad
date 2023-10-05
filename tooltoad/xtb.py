@@ -82,6 +82,9 @@ def xtb_calculate(
         results["grad"] = read_gradients(grad_lines)
     if "wbo" in options:
         results["wbo"] = read_wbo(tmp_scr / "wbo", len(atoms))
+    if "pop" in options:
+        print("here")
+        results["mulliken"] = read_mulliken(tmp_scr / "charges")
     results["atoms"] = atoms
     results["coords"] = coords
     if "opt" in options:
@@ -227,6 +230,11 @@ def read_wbo(wbo_file, n_atoms):
         j = j.astype(int) - 1
         wbo[i, j] = wbo[j, i] = o
     return wbo
+
+
+def read_mulliken(charges_file):
+    """Read Mulliken charges from charges file."""
+    return np.loadtxt(charges_file)
 
 
 def read_xtb_results(lines: List[str]):
