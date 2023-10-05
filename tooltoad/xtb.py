@@ -80,6 +80,8 @@ def xtb_calculate(
         with open(tmp_scr / "mol.engrad", "r") as f:
             grad_lines = f.readlines()
         results["grad"] = read_gradients(grad_lines)
+    if "wbo" in options:
+        results["wbo"] = read_wbo(tmp_scr / "wbo", len(atoms))
     results["atoms"] = atoms
     results["coords"] = coords
     if "opt" in options:
@@ -214,6 +216,17 @@ def read_gradients(lines: List[str]):
             gradients.append(float(line))
     gradients = np.asarray(gradients)
     return gradients.reshape(-1, 3)
+
+
+def read_wbo(wbo_file, n_atoms):
+    """Read Wiberg bond order from wbo file."""
+    data = np.loadtxt(wbo_file)
+    wbo = np.zeros((n_atoms, n_atoms))
+    for i, j, o in data:
+        i = i.astype(int) - 1
+        j = j.astype(int) - 1
+        wbo[i, j] = wbo[j, i] = o
+    return wbo
 
 
 def read_xtb_results(lines: List[str]):
