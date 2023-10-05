@@ -230,7 +230,8 @@ def read_xtb_results(lines: List[str]):
         )
         return total_seconds
 
-    property_start_idx, dipole_idx, quadrupole_idx, runtime_idx = (
+    property_start_idx, dipole_idx, quadrupole_idx, runtime_idx, polarizability_idx = (
+        np.nan,
         np.nan,
         np.nan,
         np.nan,
@@ -251,6 +252,8 @@ def read_xtb_results(lines: List[str]):
             quadrupole_idx = i
         elif "total:" in line:
             runtime_idx = i
+        elif "Mol. α(0) /au" in line:
+            polarizability_idx = i
 
         # read property table
         if i > (property_start_idx + 1):
@@ -261,6 +264,10 @@ def read_xtb_results(lines: List[str]):
             else:
                 tmp = line.strip(":").strip().strip("->").split()[:-1]
                 properties[" ".join(tmp[:-1])] = float(tmp[-1])
+
+        # read polarizability
+        if i == polarizability_idx:
+            polarizability = float(line.split()[-1])
 
         # read dipole moment
         if i > (dipole_idx + 2):
@@ -296,6 +303,7 @@ def read_xtb_results(lines: List[str]):
         "programm_version": xtb_version,
         "wall_time": wall_time,
         "cpu_time": cpu_time,
+        "polarizability": polarizability,
         "dipole_vec": dipole_vec,
         "dipole_norm": dip_norm,
         "quadrupole_mat": quadrupole_mat,
