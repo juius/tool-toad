@@ -354,7 +354,7 @@ if __name__ == "__main__":
         [2.44627963506354, -0.62656052376019, 0.69196732726456],
     ]
 
-    options = {"opt": True, "alpb": "methanol"}
+    options = {"opt": True, "alpb": "methanol", "wbo": True, "pop": True}
     results = xtb_calculate(atoms=atoms, coords=coords, charge=1, options=options)
 
     for key, value in results.items():
