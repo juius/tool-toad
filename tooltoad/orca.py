@@ -1,10 +1,7 @@
 import logging
-import os
-import tempfile
-from pathlib import Path
 from typing import List
 
-from tooltoad.utils import check_executable, stream
+from tooltoad.utils import WorkingDir, check_executable, stream
 
 _logger = logging.getLogger("orca")
 
@@ -23,32 +20,34 @@ def orca_calculate(
     scr: str = ".",
     n_cores: int = 1,
     memory: int = 8,
-    output_dir=None,
+    calc_dir: str = None,
     orca_cmd: str = ORCA_CMD,
     set_env: str = SET_ENV,
-) -> tuple:
+) -> dict:
     """Runs ORCA calculation.
 
     Args:
         atoms (List[str]): List of atom symbols.
         coords (List[list]): 3xN list of atom coordinates.
+        charge (int): Formal charge of molecule.
+        multiplicity (int): Spin multiplicity of molecule.
         options (dict): ORCA calculation options.
+        xtra_inp_str (str): Additional input string to append after # header.
         scr (str, optional): Path to scratch directory. Defaults to '.'.
         n_cores (int, optional): Number of cores used in calculation. Defaults to 1.
+        memory (int, optional): Available memory in GB. Defaults to 8.
+        calc_dir (str, optional): Name of calculation directory, will be removed after calculation is None. Defaults to None.
+        orca_cmd (str): Path to ORCA executable.
+        set_env (str): Command to set environmental variables.
+
 
     Returns:
-        tuple: (atoms, coords, energy)
+         dict: {'atoms': ..., 'coords': ..., ...}
     """
     check_executable(orca_cmd)
-    if output_dir:
-        dir_name = str(Path(scr) / output_dir)
-        os.makedirs(dir_name)
-    else:
-        tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="ORCA_")
-        dir_name = tempdir.name
-    tmp_scr = Path(dir_name)
+    work_dir = WorkingDir(root=scr, name=calc_dir)
 
-    with open(tmp_scr / "input.inp", "w") as f:
+    with open(work_dir / "input.inp", "w") as f:
         f.write(
             write_orca_input(
                 atoms,
@@ -67,7 +66,7 @@ def orca_calculate(
     _logger.debug(f"Running Orca as: {cmd}")
 
     # Run Orca, capture an log output
-    generator = stream(cmd, cwd=tmp_scr)
+    generator = stream(cmd, cwd=str(work_dir))
     lines = []
     for line in generator:
         lines.append(line)
@@ -85,8 +84,10 @@ def orca_calculate(
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("".join(lines))
         results = {}
-    if output_dir:
-        results["calc_dir"] = dir_name
+    if calc_dir:
+        results["calc_dir"] = str(work_dir)
+    else:
+        work_dir.cleanup()
     return results
 
 

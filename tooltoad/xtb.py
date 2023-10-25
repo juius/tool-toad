@@ -1,12 +1,11 @@
 import logging
 import os
-import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
 
-from tooltoad.utils import check_executable, stream
+from tooltoad.utils import WorkingDir, check_executable, stream
 
 _logger = logging.getLogger("xtb")
 
@@ -20,6 +19,7 @@ def xtb_calculate(
     scr: str = ".",
     n_cores: int = 1,
     detailed_input: dict = None,
+    calc_dir: str = None,
     xtb_cmd: str = "xtb",
 ) -> dict:
     """Run xTB calculation.
@@ -33,7 +33,8 @@ def xtb_calculate(
         scr (str, optional): Path to scratch directory. Defaults to '.'.
         n_cores (int, optional): Number of cores used in calculation. Defaults to 1.
         detailed_input (dict, optional): Detailed input for xTB calculation. Defaults to None.
-        xtb_cmd (str): Path to xtb executable.
+        calc_dir (str, optional): Name of calculation directory, will be removed after calculation is None. Defaults to None.
+        xtb_cmd (str): Path to xTB executable.
 
     Returns:
         dict: {'atoms': ..., 'coords': ..., ...}
@@ -42,9 +43,8 @@ def xtb_calculate(
     set_threads(n_cores)
 
     # create TMP directory
-    tempdir = tempfile.TemporaryDirectory(dir=scr, prefix="XTB_")
-    tmp_scr = Path(tempdir.name)
-    xyz_file = write_xyz(atoms, coords, tmp_scr)
+    work_dir = WorkingDir(root=scr, name=calc_dir)
+    xyz_file = write_xyz(atoms, coords, work_dir)
 
     # clean xtb method option
     for k, value in options.items():
@@ -62,7 +62,7 @@ def xtb_calculate(
         else:
             cmd += f"--{key} {str(value)} "
     if detailed_input is not None:
-        fpath = write_detailed_input(detailed_input, tmp_scr)
+        fpath = write_detailed_input(detailed_input, work_dir)
         cmd += f"--input {fpath.name} "
 
     lines = run_xtb((cmd, xyz_file))
@@ -77,18 +77,22 @@ def xtb_calculate(
     if "hess" in options:
         results.update(read_thermodynamics(lines))
     if "grad" in options:
-        with open(tmp_scr / "mol.engrad", "r") as f:
+        with open(work_dir / "mol.engrad", "r") as f:
             grad_lines = f.readlines()
         results["grad"] = read_gradients(grad_lines)
     if "wbo" in options:
-        results["wbo"] = read_wbo(tmp_scr / "wbo", len(atoms))
+        results["wbo"] = read_wbo(work_dir / "wbo", len(atoms))
     if "pop" in options:
         print("here")
-        results["mulliken"] = read_mulliken(tmp_scr / "charges")
+        results["mulliken"] = read_mulliken(work_dir / "charges")
     results["atoms"] = atoms
     results["coords"] = coords
     if "opt" in options:
         results["opt_coords"] = read_opt_structure(lines)[-1]
+    if calc_dir:
+        results["calc_dir"] = str(work_dir)
+    else:
+        work_dir.cleanup()
 
     return results
 
