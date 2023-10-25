@@ -83,7 +83,6 @@ def xtb_calculate(
     if "wbo" in options:
         results["wbo"] = read_wbo(work_dir / "wbo", len(atoms))
     if "pop" in options:
-        print("here")
         results["mulliken"] = read_mulliken(work_dir / "charges")
     results["atoms"] = atoms
     results["coords"] = coords
@@ -147,7 +146,7 @@ def run_xtb(args: Tuple[str]):
     """Run xTB command for xyz-file in parent directory, logs and returns
     output."""
     cmd, xyz_file = args
-    generator = stream(f"{cmd}-- {xyz_file.name}", cwd=xyz_file.parent)
+    generator = stream(f"{cmd}-- {xyz_file.name} | tee xtb.out", cwd=xyz_file.parent)
     lines = []
     for line in generator:
         lines.append(line)
@@ -328,11 +327,15 @@ def read_xtb_results(lines: List[str]):
         "programm_version": xtb_version,
         "wall_time": wall_time,
         "cpu_time": cpu_time,
-        "polarizability": polarizability,
-        "dipole_vec": dipole_vec,
-        "dipole_norm": dip_norm,
-        "quadrupole_mat": quadrupole_mat,
     }
+
+    if not np.isnan(polarizability_idx):
+        results["polarizability"] = polarizability
+    if not np.isnan(dipole_idx):
+        results["dipole_vec"] = dipole_vec
+        results["dipole_norm"] = dip_norm
+    if not np.isnan(quadrupole_idx):
+        results["quadrupole_mat"] = quadrupole_mat
 
     results.update(properties)
 

@@ -51,7 +51,7 @@ class WorkingDir:
         return self.__str__()
 
     def __truediv__(self, name: str) -> str:
-        return str((self.dir / name).resolve())
+        return self.dir / name
 
     def _random_str(self) -> str:
         name = "".join(random.choices(alphabet, k=6))
