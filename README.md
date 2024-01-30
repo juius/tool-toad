@@ -1,10 +1,6 @@
 # ToolToad
 ## Functions and utilities for computational chemistry
 
-System dependent variables like paths to executables are set in [config.toml](config.toml).
-
-## Overview of functionalities:
-
 * QM python wrappers for:
     * Orca (`orca_calculate`)
     * xTB (`xtb_calculate`)
