@@ -7,6 +7,8 @@ from pathlib import Path
 
 alphabet = string.ascii_lowercase + string.digits
 
+STANDARD_PROPERTIES = {"xtb": {"total energy": "electronic_energy"}, "orca": {}}
+
 
 def stream(cmd: str, cwd: str = None, shell: bool = True):
     """Execute command in directory, and stream stdout."""
@@ -60,11 +62,12 @@ class WorkingDir:
         return name
 
     def create(self) -> None:
-        self.dir.mkdir(parents=True, exist_ok=False)
+        self.dir.mkdir(parents=True, exist_ok=True)
 
     def cleanup(self) -> None:
         try:
-            shutil.rmtree(self.dir)
+            print("removing ", self.dir.absolute())
+            shutil.rmtree(self.dir.absolute())
         except FileNotFoundError:
             pass
 

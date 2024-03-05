@@ -5,7 +5,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from tooltoad.utils import WorkingDir, check_executable, stream
+from tooltoad.utils import WorkingDir, check_executable, stream, STANDARD_PROPERTIES
 
 _logger = logging.getLogger("xtb")
 
@@ -338,7 +338,10 @@ def read_xtb_results(lines: List[str]):
         results["quadrupole_mat"] = quadrupole_mat
 
     results.update(properties)
-
+    # add standardized property names
+    for key, value in STANDARD_PROPERTIES["xtb"].items():
+        if key in results:
+            results[value] = results[key]
     return results
 
 
