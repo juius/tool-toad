@@ -5,11 +5,37 @@ import networkx as nx
 import numpy as np
 from hide_warnings import hide_warnings
 from rdkit import Chem
+from rdkit.Chem import rdFMCS
 
 try:
     from rdkit.Chem import rdDetermineBonds
 except ImportError:
     print("Needs rdkit >= 2020.09.1")
+
+
+def get_atom_map(mol1, mol2):
+    """Get mapping between atom indices based on connectivity
+    ! Mappings are not unique due to symmetry!
+
+    Args:
+        mol1 (_type_): _description_
+        mol2 (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    mcs = Chem.MolFromSmarts(
+        rdFMCS.FindMCS(
+            [mol1, mol2], bondCompare=Chem.rdFMCS.BondCompare.CompareAny
+        ).smartsString
+    )
+    match1 = list(mol1.GetSubstructMatch(mcs))
+    match2 = list(mol2.GetSubstructMatch(mcs))
+
+    amap = {}
+    for i1, i2 in zip(match1, match2):
+        amap[i1] = i2
+    return amap
 
 
 @hide_warnings

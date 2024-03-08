@@ -70,6 +70,10 @@ def xtb_calculate(
         _logger.warning("xTB did not terminate normally")
         _logger.info("".join(lines))
         results = {"normal_termination": False, "log": "".join(lines)}
+        if calc_dir:
+            results["calc_dir"] = str(work_dir)
+        else:
+            work_dir.cleanup()
         return results
 
     # read results

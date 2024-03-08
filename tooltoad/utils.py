@@ -56,7 +56,7 @@ class WorkingDir:
         return self.dir / name
 
     def _random_str(self) -> str:
-        name = "".join(random.choices(alphabet, k=6))
+        name = "_" + "".join(random.choices(alphabet, k=6))
         while (self.root / name).exists():
             name = "".join(random.choices(alphabet, k=6))
         return name
@@ -66,7 +66,7 @@ class WorkingDir:
 
     def cleanup(self) -> None:
         try:
-            print("removing ", self.dir.absolute())
+            # print("removing ", self.dir.absolute())
             shutil.rmtree(self.dir.absolute())
         except FileNotFoundError:
             pass
