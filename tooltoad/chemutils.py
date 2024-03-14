@@ -14,8 +14,8 @@ except ImportError:
 
 
 def get_atom_map(mol1, mol2):
-    """Get mapping between atom indices based on connectivity
-    ! Mappings are not unique due to symmetry!
+    """Get mapping between atom indices based on connectivity ! Mappings are
+    not unique due to symmetry!
 
     Args:
         mol1 (_type_): _description_
@@ -59,6 +59,22 @@ def xyz2mol(xyzblock: str, useHueckel=True, **kwargs):
     Chem.SanitizeMol(rdkit_mol)
     _determineConnectivity(rdkit_mol, useHueckel=useHueckel, **kwargs)
     return rdkit_mol
+
+
+def xyz2ac(xyzblock: str):
+    """Converts atom symbols and coordinates to xyz string."""
+    lines = xyzblock.split("\n")
+    atoms = []
+    coords = []
+    for line in lines[2:]:
+        line = line.strip()
+        if len(line) > 0:
+            atom, x, y, z = line.split()
+            atoms.append(atom)
+            coords.append([float(x), float(y), float(z)])
+        else:
+            break
+    return atoms, coords
 
 
 def ac2xyz(atoms: List[str], coords: List[list]):

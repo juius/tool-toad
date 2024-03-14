@@ -196,7 +196,7 @@ def addFrame(
             ax_below.add_patch(shadow)
 
 
-def plot_parity(ax: plt.axes, tick_base: int = 10, **kwargs) -> None:
+def plot_parity(ax: plt.axes, tick_base: int = None, **kwargs) -> None:
     """Make square plot with parity line.
 
     Args:
@@ -219,6 +219,10 @@ def plot_parity(ax: plt.axes, tick_base: int = 10, **kwargs) -> None:
     )
     ax.set_xlim(ax_min, ax_max)
     ax.set_ylim(ax_min, ax_max)
+
+    if tick_base is None:
+        ax_len = ax_max - ax_min
+        tick_base = round(ax_len / 4)
 
     loc = plticker.MultipleLocator(base=tick_base)
     ax.xaxis.set_major_locator(loc)
