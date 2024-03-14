@@ -158,12 +158,18 @@ def run_xtb(args: Tuple[str]):
     return lines
 
 
-def normal_termination(lines: List[str]):
+def normal_termination(lines: List[str], strict: bool = True):
     """Check if xTB terminated normally."""
+    first_check = False
     for line in reversed(lines):
         if line.strip().startswith("normal termination"):
-            return True
-    return False
+            first_check = True
+            if not strict:
+                return first_check
+        if "FAILED TO" in line:
+            if strict:
+                return False
+    return first_check
 
 
 def read_opt_structure(lines: List[str]):
@@ -329,8 +335,8 @@ def read_xtb_results(lines: List[str]):
         "normal_termination": True,
         "programm_call": programm_call,
         "programm_version": xtb_version,
-        "wall_time": wall_time,
-        "cpu_time": cpu_time,
+        # "wall_time": wall_time,
+        # "cpu_time": cpu_time,
     }
 
     if not np.isnan(polarizability_idx):

@@ -83,7 +83,7 @@ def orca_calculate(
     else:
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("".join(lines))
-        results = {}
+        results = {"normal_termination": False}
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
@@ -289,7 +289,7 @@ def get_orca_results(
     if not normal_termination(lines):
         raise ValueError("ORCA did not terminate normally")
 
-    results = {}
+    results = {"normal_termination": True}
     for property in properties:
         results[property] = reader[property](lines)
 
