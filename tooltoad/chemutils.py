@@ -1,16 +1,61 @@
 import os
+import re
 from typing import List
 
 import networkx as nx
 import numpy as np
 from hide_warnings import hide_warnings
 from rdkit import Chem
-from rdkit.Chem import rdFMCS
+from rdkit.Chem import rdFMCS, rdMolDescriptors
 
 try:
     from rdkit.Chem import rdDetermineBonds
 except ImportError:
     print("Needs rdkit >= 2020.09.1")
+
+
+def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
+    """Calculate the number of conformers based on the supplied rule and the
+    number of rotatable bonds.
+
+    Args:
+        mol (Chem.Mol): RDKit molecule object.
+        conf_rule (str, optional): Expression with which to calculate the number of conformers based on the number of rotatable bonds. Defaults to "3x+3".
+
+    Returns:
+        int: _description_
+    """
+    for c in conf_rule:
+        assert c in [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "x",
+            "+",
+            ",",
+            "m",
+            "a",
+        ], f"`conf_rule` must be of the form '3x+3,max10' but got {conf_rule}"
+    fragments = re.split(r"\+|,", conf_rule)
+    constant_term = 0
+    linear_term = 0
+    max_term = float("inf")
+    for fragment in fragments:
+        if "max" in fragment:
+            max_term = int(fragment.lstrip("max"))
+        elif "x" in fragment:
+            linear_term = int(fragment.rstrip("x"))
+        else:
+            constant_term = int(fragment)
+    x = rdMolDescriptors.CalcNumRotatableBonds(mol)
+    return min([linear_term * x + constant_term, max_term])
 
 
 def get_atom_map(mol1, mol2):
