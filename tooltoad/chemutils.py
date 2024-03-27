@@ -6,12 +6,8 @@ import networkx as nx
 import numpy as np
 from hide_warnings import hide_warnings
 from rdkit import Chem
-from rdkit.Chem import rdFMCS, rdMolDescriptors
-
-try:
-    from rdkit.Chem import rdDetermineBonds
-except ImportError:
-    print("Needs rdkit >= 2020.09.1")
+from rdkit.Chem import rdDetermineBonds, rdFMCS, rdMolAlign, rdMolDescriptors
+from rdkit.ML.Cluster import Butina
 
 
 def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
@@ -56,6 +52,39 @@ def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
             constant_term = int(fragment)
     x = rdMolDescriptors.CalcNumRotatableBonds(mol)
     return min([linear_term * x + constant_term, max_term])
+
+
+def filter_conformers(
+    mol: Chem.Mol, rmsdThreshold: float = 1.0, numThreads: int = -1
+) -> Chem.Mol:
+    """Filter conformers of a molecule based on RMSD clustering.
+
+    Args:
+        mol (Chem.Mol): Molecule to filter
+        rmsdThreshold (float, optional): Threshold for clustering. Defaults to 1.0.
+        numThreads (int, optional): Number of cores to use. Defaults to -1.
+
+    Returns:
+        Chem.Mol: Molecule with filtered conformers
+    """
+    distance_matrix = rdMolAlign.GetAllConformerBestRMS(
+        mol, numThreads=numThreads, symmetrizeConjugatedTerminalGroups=True
+    )
+
+    clusters = Butina.ClusterData(
+        data=distance_matrix,
+        nPts=mol.GetNumConformers(),
+        distThresh=rmsdThreshold,
+        isDistData=True,
+        reordering=True,
+    )
+
+    retained_confs = [mol.GetConformer(i[0]) for i in clusters]
+    new_mol = Chem.Mol(mol)
+    new_mol.RemoveAllConformers()
+    for conf in retained_confs:
+        new_mol.AddConformer(conf, assignId=True)
+    return new_mol
 
 
 def get_atom_map(mol1, mol2):
