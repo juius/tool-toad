@@ -55,7 +55,10 @@ def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
 
 
 def filter_conformers(
-    mol: Chem.Mol, rmsdThreshold: float = 1.0, numThreads: int = -1
+    mol: Chem.Mol,
+    rmsdThreshold: float = 1.0,
+    numThreads: int = -1,
+    onlyHeavyAtoms: bool = True,
 ) -> Chem.Mol:
     """Filter conformers of a molecule based on RMSD clustering.
 
@@ -63,12 +66,14 @@ def filter_conformers(
         mol (Chem.Mol): Molecule to filter
         rmsdThreshold (float, optional): Threshold for clustering. Defaults to 1.0.
         numThreads (int, optional): Number of cores to use. Defaults to -1.
+        onlyHeavyAtoms (bool, optional): Only consider heavy atoms. Defaults to True.
 
     Returns:
         Chem.Mol: Molecule with filtered conformers
     """
+    eval_mol = Chem.RemoveHs(mol) if onlyHeavyAtoms else mol
     distance_matrix = rdMolAlign.GetAllConformerBestRMS(
-        mol, numThreads=numThreads, symmetrizeConjugatedTerminalGroups=True
+        eval_mol, numThreads=numThreads, symmetrizeConjugatedTerminalGroups=True
     )
 
     clusters = Butina.ClusterData(
