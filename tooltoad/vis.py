@@ -1,13 +1,17 @@
 import os
+from io import BytesIO
 from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
 import numpy as np
 import py3Dmol
 from matplotlib import patches
+from PIL import Image
 from rdkit import Chem
-from rdkit.Chem import Draw
+from rdkit.Chem import Draw, rdDepictor
+from rdkit.Geometry import Point2D
 
 # load matplotlib style
 plt.style.use(os.path.dirname(__file__) + "/data/paper.mplstyle")
@@ -43,6 +47,154 @@ def twoColumnFig(**kwargs):
     size = (12, 4.829)
     fig, axs = plt.subplots(figsize=size, **kwargs)
     return fig, axs
+
+
+def draw2d(
+    mol: Chem.Mol,
+    legend: str = None,
+    atomLabels: dict = None,
+    atomHighlights: dict = None,
+    size=(800, 600),
+    blackwhite=True,
+):
+    """Create 2D depiction of molecule for publication.
+
+    Args:
+        mol (Chem.Mol): Molecule to render
+        legend (str, optional): Legend string. Defaults to None.
+        atomLabels (dict, optional): Dictionary of atomindices and atomlabels, f.x.:
+                                     {17: 'H<sub>1</sub>', 18: 'H<sub>2</sub>'}.
+                                     Defaults to None.
+        atomHighlights (dict, optional): List of atoms to highlight,, f.x.:
+                                         [(9, False, (0.137, 0.561, 0.984)),
+                                         (15, True, (0, 0.553, 0))]
+                                         First item is the atomindex, second is whether
+                                         or not the highlight should be filled, and third
+                                         is the color.
+                                         Defaults to None.
+        size (tuple, optional): Size of the drawing canvas. Defaults to (800, 600).
+        blackwhite (bool, optional): Black and white color palet. Defaults to True.
+
+    Returns:
+        PIL.PNG: Image of the molecule.
+    """
+    d2d = Draw.MolDraw2DCairo(*size)
+    rdDepictor.Compute2DCoords(mol)
+    rdDepictor.NormalizeDepiction(mol)
+    rdDepictor.StraightenDepiction(mol)
+    dopts = d2d.drawOptions()
+    dopts.legendFraction = 0.15
+    dopts.legendFontSize = 25
+    dopts.baseFontSize = 0.8
+    dopts.additionalAtomLabelPadding = 0.1
+    dopts.bondLineWidth = 1
+    dopts.scaleBondWidth = False
+    if blackwhite:
+        dopts.useBWAtomPalette()
+    if atomLabels:
+        for key, value in atomLabels.items():
+            dopts.atomLabels[key] = value
+
+    if legend:
+        d2d.DrawMolecule(mol, legend=legend)
+    else:
+        d2d.DrawMolecule(mol)
+
+    alpha = 0.4
+    positions = []
+    radii = []
+    colors = []
+    filled_bools = []
+    for h in atomHighlights:
+        filled = False
+        color = (0.137, 0.561, 0.984)
+        if isinstance(h, int):
+            atomIdx = h
+        elif len(h) == 2:
+            atomIdx, filled = h
+        elif len(h) == 3:
+            atomIdx, filled, color = h
+        else:
+            raise ValueError("Invalid atom highlight {}".format(h))
+        point = mol.GetConformer().GetAtomPosition(atomIdx)
+        positions.append(Point2D(point.x, point.y))
+        radii.append(0.35)
+        colors.append(color)
+        filled_bools.append(filled)
+
+    # draw filled circles first
+    for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
+        if filled:
+            color = (color[0], color[1], color[2], alpha)
+            d2d.SetColour(color)
+            d2d.SetFillPolys(True)
+            d2d.SetLineWidth(0)
+            d2d.DrawArc(pos, radius, 0.0, 360.0)
+
+    # # now draw molecule again
+    d2d.SetLineWidth(3)
+    if legend:
+        d2d.DrawMolecule(mol, legend=legend)
+    else:
+        d2d.DrawMolecule(mol)
+
+    # now draw ring highlights
+    for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
+        d2d.SetColour(color)
+        d2d.SetFillPolys(False)
+        # d2d.SetLineWidth(2.5)
+        d2d.SetLineWidth(5)
+        d2d.DrawArc(pos, radius, 0.0, 360.0)
+
+    # and draw molecule again for whatever reason
+    d2d.SetLineWidth(1)
+    if legend:
+        d2d.DrawMolecule(mol, legend=legend)
+    else:
+        d2d.DrawMolecule(mol)
+
+    # now draw ring highlights again
+    for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
+        if not filled:
+            d2d.SetColour(color)
+            d2d.SetFillPolys(False)
+            # d2d.SetLineWidth(2.5)
+            d2d.SetLineWidth(5)
+            d2d.DrawArc(pos, radius, 0.0, 360.0)
+    # finish drawing
+    d2d.FinishDrawing()
+    d2d.GetDrawingText()
+    bio = BytesIO(d2d.GetDrawingText())
+    img = Image.open(bio)
+    return img
+
+
+def molGrid(images: List, buffer: int = 5, out_file: str = None):
+    """Creates a grid of images.
+
+    Args:
+        images (List): List of lists of images.
+        buffer (int, optional): Buffer between images. Defaults to 5.
+        out_file (str, optional): Filename to save image to. Defaults to None.
+    """
+    max_width = max([max([img.width for img in imgs]) for imgs in images])
+    max_height = max([max([img.height for img in imgs]) for imgs in images])
+    max_num_rows = max([len(imgs) for imgs in images])
+    fig_width = max_width * max_num_rows + buffer * (max_num_rows - 1)
+    fig_height = max_height * len(images) + buffer * (len(images) - 1)
+    res = Image.new("RGBA", (fig_width, fig_height))
+
+    y = 0
+    for imgs in images:
+        x = 0
+        for img in imgs:
+            res.paste(img, (x, y))
+            x += img.width + buffer
+        y += img.height + buffer
+    if out_file:
+        res.save(out_file)
+    else:
+        return res
 
 
 def draw3d(
