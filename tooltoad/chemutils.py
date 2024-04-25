@@ -1,5 +1,9 @@
+import json
+import logging
 import os
 import re
+import tempfile
+from pathlib import Path
 from typing import List
 
 import networkx as nx
@@ -8,6 +12,10 @@ from hide_warnings import hide_warnings
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds, rdFMCS, rdMolAlign, rdMolDescriptors
 from rdkit.ML.Cluster import Butina
+
+from tooltoad.utils import stream
+
+logger = logging.getLogger(__name__)
 
 
 def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
@@ -117,18 +125,46 @@ def get_atom_map(mol1, mol2):
     return amap
 
 
+def determine_connectivity_xtb(mol: Chem.Mol) -> Chem.Mol:
+    """Determine connectivity based on GFNFF-xTB implementation."""
+    calc_dir = tempfile.TemporaryDirectory()
+    tmp_file = Path(calc_dir.name) / "input.xyz"
+    Chem.MolToXYZFile(mol, str(tmp_file))
+    CMD = f"xtb --gfnff {str(tmp_file)} --norestart --wrtopo nb"
+    output = list(stream(CMD, cwd=calc_dir.name))
+    logger.debug("".join(output))
+    with open(Path(calc_dir.name) / "gfnff_lists.json", "r") as f:
+        data_dict = json.load(f)
+    calc_dir.cleanup()
+
+    # set connectivity in rdkit mol object
+    nb = data_dict["nb"]
+    emol = Chem.EditableMol(mol)
+    for i, a in enumerate(mol.GetAtoms()):
+        for j in nb[i]:
+            if j == 0:
+                break
+            elif i > j - 1:
+                continue
+            emol.AddBond(i, j - 1, Chem.BondType.SINGLE)
+    return emol.GetMol()
+
+
 @hide_warnings
-def _determineConnectivity(mol, **kwargs):
+def _determineConnectivity(mol, usextb=False, **kwargs):
     """Determine bonds in molecule."""
-    try:
-        rdDetermineBonds.DetermineConnectivity(mol, **kwargs)
-    finally:
-        # cleanup extended hueckel files
+    if usextb:
+        mol = determine_connectivity_xtb(mol)
+    else:
         try:
-            os.remove("nul")
-            os.remove("run.out")
-        except FileNotFoundError:
-            pass
+            rdDetermineBonds.DetermineConnectivity(mol, **kwargs)
+        finally:
+            # cleanup extended hueckel files
+            try:
+                os.remove("nul")
+                os.remove("run.out")
+            except FileNotFoundError:
+                pass
     return mol
 
 
