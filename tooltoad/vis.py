@@ -84,7 +84,7 @@ def draw2d(
     rdDepictor.StraightenDepiction(mol)
     dopts = d2d.drawOptions()
     dopts.legendFraction = 0.15
-    dopts.legendFontSize = 25
+    dopts.legendFontSize = 50
     dopts.baseFontSize = 0.8
     dopts.additionalAtomLabelPadding = 0.1
     dopts.bondLineWidth = 1
@@ -105,62 +105,63 @@ def draw2d(
     radii = []
     colors = []
     filled_bools = []
-    for h in atomHighlights:
-        filled = False
-        color = (0.137, 0.561, 0.984)
-        if isinstance(h, int):
-            atomIdx = h
-        elif len(h) == 2:
-            atomIdx, filled = h
-        elif len(h) == 3:
-            atomIdx, filled, color = h
+    if atomHighlights:
+        for h in atomHighlights:
+            filled = False
+            color = (0.137, 0.561, 0.984)
+            if isinstance(h, int):
+                atomIdx = h
+            elif len(h) == 2:
+                atomIdx, filled = h
+            elif len(h) == 3:
+                atomIdx, filled, color = h
+            else:
+                raise ValueError("Invalid atom highlight {}".format(h))
+            point = mol.GetConformer().GetAtomPosition(int(atomIdx))
+            positions.append(Point2D(point.x, point.y))
+            radii.append(0.35)
+            colors.append(color)
+            filled_bools.append(bool(filled))
+
+        # draw filled circles first
+        for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
+            if filled:
+                color = (color[0], color[1], color[2], alpha)
+                d2d.SetColour(color)
+                d2d.SetFillPolys(True)
+                d2d.SetLineWidth(0)
+                d2d.DrawArc(pos, radius, 0.0, 360.0)
+
+        # # now draw molecule again
+        d2d.SetLineWidth(3)
+        if legend:
+            d2d.DrawMolecule(mol, legend=legend)
         else:
-            raise ValueError("Invalid atom highlight {}".format(h))
-        point = mol.GetConformer().GetAtomPosition(atomIdx)
-        positions.append(Point2D(point.x, point.y))
-        radii.append(0.35)
-        colors.append(color)
-        filled_bools.append(filled)
+            d2d.DrawMolecule(mol)
 
-    # draw filled circles first
-    for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
-        if filled:
-            color = (color[0], color[1], color[2], alpha)
-            d2d.SetColour(color)
-            d2d.SetFillPolys(True)
-            d2d.SetLineWidth(0)
-            d2d.DrawArc(pos, radius, 0.0, 360.0)
-
-    # # now draw molecule again
-    d2d.SetLineWidth(3)
-    if legend:
-        d2d.DrawMolecule(mol, legend=legend)
-    else:
-        d2d.DrawMolecule(mol)
-
-    # now draw ring highlights
-    for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
-        d2d.SetColour(color)
-        d2d.SetFillPolys(False)
-        # d2d.SetLineWidth(2.5)
-        d2d.SetLineWidth(5)
-        d2d.DrawArc(pos, radius, 0.0, 360.0)
-
-    # and draw molecule again for whatever reason
-    d2d.SetLineWidth(1)
-    if legend:
-        d2d.DrawMolecule(mol, legend=legend)
-    else:
-        d2d.DrawMolecule(mol)
-
-    # now draw ring highlights again
-    for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
-        if not filled:
+        # now draw ring highlights
+        for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
             d2d.SetColour(color)
             d2d.SetFillPolys(False)
             # d2d.SetLineWidth(2.5)
             d2d.SetLineWidth(5)
             d2d.DrawArc(pos, radius, 0.0, 360.0)
+
+        # and draw molecule again for whatever reason
+        d2d.SetLineWidth(1)
+        if legend:
+            d2d.DrawMolecule(mol, legend=legend)
+        else:
+            d2d.DrawMolecule(mol)
+
+        # now draw ring highlights again
+        for pos, radius, color, filled in zip(positions, radii, colors, filled_bools):
+            if not filled:
+                d2d.SetColour(color)
+                d2d.SetFillPolys(False)
+                # d2d.SetLineWidth(2.5)
+                d2d.SetLineWidth(5)
+                d2d.DrawArc(pos, radius, 0.0, 360.0)
     # finish drawing
     d2d.FinishDrawing()
     d2d.GetDrawingText()
