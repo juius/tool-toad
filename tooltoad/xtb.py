@@ -5,7 +5,12 @@ from typing import List, Tuple
 
 import numpy as np
 
-from tooltoad.utils import WorkingDir, check_executable, stream, STANDARD_PROPERTIES
+from tooltoad.utils import (
+    STANDARD_PROPERTIES,
+    WorkingDir,
+    check_executable,
+    stream,
+)
 
 _logger = logging.getLogger("xtb")
 
@@ -92,6 +97,9 @@ def xtb_calculate(
     results["coords"] = coords
     if "opt" in options:
         results["opt_coords"] = read_opt_structure(lines)[-1]
+    if detailed_input:
+        if "scan" in detailed_input:
+            results["scan"] = read_scan(work_dir / "xtbscan.log")
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
@@ -133,7 +141,7 @@ def write_detailed_input(details_dict: dict, scr: Path):
         detailed_input_str += f"${key}\n"
         for subkey, subvalue in value.items():
             detailed_input_str += (
-                f'\t{subkey}: {", ".join([str(i) for i in subvalue])}\n'
+                f' {subkey}: {", ".join([str(i) for i in subvalue])}\n'
             )
     detailed_input_str += "$end\n"
 
@@ -250,6 +258,20 @@ def read_mulliken(charges_file):
     return np.loadtxt(charges_file)
 
 
+def read_scan(scan_file):
+    """Read scan results from xTB output."""
+    with open(scan_file, "r") as f:
+        lines = f.readlines()
+    nAtoms = int(lines[0])
+    nFrames = int(len(lines) / (nAtoms + 2))
+    energies = []
+    traj = []
+    for n in range(nFrames):
+        energies.append(float(lines[n * (nAtoms + 2) + 1].split(":")[1].strip("xtb")))
+        traj.append("".join(lines[n * (nAtoms + 2) : n * (nAtoms + 2) + (nAtoms + 2)]))
+    return energies, traj
+
+
 def read_xtb_results(lines: List[str]):
     """Read basic results from xTB log."""
 
@@ -335,8 +357,8 @@ def read_xtb_results(lines: List[str]):
         "normal_termination": True,
         "programm_call": programm_call,
         "programm_version": xtb_version,
-        # "wall_time": wall_time,
-        # "cpu_time": cpu_time,
+        "wall_time": wall_time,
+        "cpu_time": cpu_time,
     }
 
     if not np.isnan(polarizability_idx):
