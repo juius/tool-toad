@@ -84,7 +84,7 @@ def draw2d(
     rdDepictor.StraightenDepiction(mol)
     dopts = d2d.drawOptions()
     dopts.legendFraction = 0.15
-    dopts.legendFontSize = 50
+    dopts.legendFontSize = 45
     dopts.baseFontSize = 0.8
     dopts.additionalAtomLabelPadding = 0.1
     dopts.bondLineWidth = 1
@@ -254,7 +254,7 @@ def draw3d(
                    }}""",
         )
     p.zoomTo()
-    p.show()
+    return p
 
 
 dopts = Chem.Draw.rdMolDraw2D.MolDrawOptions()
