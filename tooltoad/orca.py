@@ -75,18 +75,16 @@ def orca_calculate(
         _logger.debug(line.rstrip("\n"))
 
     if normal_termination(lines):
+        clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
         properties = ["electronic_energy", "mulliken_charges", "loewdin_charges"]
-        if "hirshfeld" in [k.lower() for k in options.keys()]:
+        if "hirshfeld" in clean_option_keys:
             properties.append("hirshfeld_charges")
-        if "opt" in [k.lower() for k in options.keys()]:
+        if any(p in clean_option_keys for p in ("opt", "optts")):
             properties.append("opt_structure")
-        elif "optts" in [k.lower() for k in options.keys()]:
-            properties.append("opt_structure")
-        if "freq" in [k.lower() for k in options.keys()]:
+        if any(p in clean_option_keys for p in ("freq", "numfreq")):
             properties.append("vibs")
-        if "numfreq" in [k.lower() for k in options.keys()]:
-            properties.append("vibs")
+            properties.append("gibbs_energy")
         results = get_orca_results(lines, properties=properties)
     else:
         _logger.warning("Orca calculation did not terminate normally.")
@@ -305,6 +303,12 @@ def read_vibrations(lines: List[str]) -> list:
     return vibrations
 
 
+def read_gibbs_energy(lines: List[str]) -> float:
+    for line in reversed(lines):
+        if "Final Gibbs free energy" in line:
+            return float(line.split()[-2])
+
+
 def get_orca_results(
     lines: List[str],
     properties: List[str] = [
@@ -329,6 +333,7 @@ def get_orca_results(
         "electronic_energy": read_final_sp_energy,  # always read this
         "opt_structure": read_opt_structure,  # optional
         "vibs": read_vibrations,  # optional
+        "gibbs_energy": read_gibbs_energy,  # optional
         "mulliken_charges": read_mulliken_charges,  # always read this
         "loewdin_charges": read_loewdin_charges,  # always read this
         "hirshfeld_charges": read_hirshfeld_charges,  # optional
