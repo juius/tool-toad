@@ -1,13 +1,15 @@
 import logging
 from typing import List
 
+import numpy as np
+
 from tooltoad.utils import WorkingDir, check_executable, stream
 
 _logger = logging.getLogger("orca")
 
 # see https://www.orcasoftware.de/tutorials_orca/first_steps/parallel.html
 ORCA_CMD = "/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411/orca"
-SET_ENV = 'env - PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/bin:$PATH" LD_LIBRARY_PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/lib:$LD_LIBRARY_PATH"'
+SET_ENV = 'export PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/bin:$PATH" LD_LIBRARY_PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/lib:$LD_LIBRARY_PATH"'
 
 
 def orca_calculate(
@@ -62,7 +64,7 @@ def orca_calculate(
         )
 
     # cmd = f'{set_env}; {orca_cmd} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
-    cmd = f'{set_env} /bin/bash -c "{orca_cmd} input.inp "--use-hwthread-cpus" | tee orca.out"'
+    cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp "--use-hwthread-cpus" | tee orca.out"'
     _logger.debug(f"Running Orca as: {cmd}")
 
     # Run Orca, capture an log output
@@ -79,6 +81,12 @@ def orca_calculate(
             properties.append("hirshfeld_charges")
         if "opt" in [k.lower() for k in options.keys()]:
             properties.append("opt_structure")
+        elif "optts" in [k.lower() for k in options.keys()]:
+            properties.append("opt_structure")
+        if "freq" in [k.lower() for k in options.keys()]:
+            properties.append("vibs")
+        if "numfreq" in [k.lower() for k in options.keys()]:
+            properties.append("vibs")
         results = get_orca_results(lines, properties=properties)
     else:
         _logger.warning("Orca calculation did not terminate normally.")
@@ -258,6 +266,45 @@ def read_hirshfeld_charges(lines: List[str]) -> list:
     return hirshfeld_charges
 
 
+def read_vibrations(lines: List[str]) -> list:
+    for i, line in enumerate(lines):
+        if "Number of atoms" in line:
+            n_atoms = int(line.split()[-1])
+        if "VIBRATIONAL FREQUENCIES" in line:
+            freq_start_idx = i
+        if "NORMAL MODES" in line:
+            mode_start_idx = i
+
+    n_vibs = 3 * n_atoms
+    frequencies = [
+        float(line.split()[1])
+        for line in lines[freq_start_idx + 5 : freq_start_idx + n_vibs + 5]
+    ]
+    modes = []
+    for i in range(int(np.ceil(n_vibs / 6))):
+        tmp_modes = []
+        for line in lines[
+            mode_start_idx
+            + 8
+            + i * (n_vibs + 1) : mode_start_idx
+            + 8
+            + (i + 1) * n_vibs
+            + i
+        ]:
+            _, *tmp_components = [float(c) for c in line.split()]
+            if len(tmp_components) < 6:
+                tmp_components += [0.0] * (6 - len(tmp_components))
+            tmp_modes.append(tmp_components)
+        tmp_modes = np.array(tmp_modes)
+        modes.extend(tmp_modes.T.reshape(6, -1, 3).tolist())
+    vibrations = [
+        {"frequency": f, "mode": list(m)}
+        for f, m in zip(frequencies, modes)
+        if f != 0.0
+    ]
+    return vibrations
+
+
 def get_orca_results(
     lines: List[str],
     properties: List[str] = [
@@ -281,6 +328,7 @@ def get_orca_results(
     reader = {
         "electronic_energy": read_final_sp_energy,  # always read this
         "opt_structure": read_opt_structure,  # optional
+        "vibs": read_vibrations,  # optional
         "mulliken_charges": read_mulliken_charges,  # always read this
         "loewdin_charges": read_loewdin_charges,  # always read this
         "hirshfeld_charges": read_hirshfeld_charges,  # optional
