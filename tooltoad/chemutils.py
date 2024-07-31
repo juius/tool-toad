@@ -18,6 +18,11 @@ from tooltoad.utils import stream
 logger = logging.getLogger(__name__)
 
 
+def hartree2kcalmol(hartree: float) -> float:
+    """Converts Hartree to kcal/mol."""
+    return hartree * 627.509474
+
+
 def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
     """Calculate the number of conformers based on the supplied rule and the
     number of rotatable bonds.
