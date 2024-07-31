@@ -85,6 +85,7 @@ def orca_calculate(
         if any(p in clean_option_keys for p in ("freq", "numfreq")):
             properties.append("vibs")
             properties.append("gibbs_energy")
+            properties.append("detailed_contributions")
         results = get_orca_results(lines, properties=properties)
     else:
         _logger.warning("Orca calculation did not terminate normally.")
@@ -309,6 +310,58 @@ def read_gibbs_energy(lines: List[str]) -> float:
             return float(line.split()[-2])
 
 
+def get_detailed_contributions(lines: List[str]) -> dict:
+    for i, l in enumerate(lines):
+        if "Zero point energy" in l:
+            zero_point_energy = float(l.split()[-4])
+        elif "Thermal vibrational correction" in l:
+            thermal_vibrational_correction = float(l.split()[-4])
+        elif "Thermal rotational correction" in l:
+            thermal_rotational_correction = float(l.split()[-4])
+        elif "Thermal translational correction" in l:
+            thermal_translational_correction = float(l.split()[-4])
+        elif "Thermal Enthalpy correction" in l:
+            thermal_enthalpy_correction = float(l.split()[-4])
+        elif "Electronic entropy" in l:
+            electronic_entropy = float(l.split()[-4])
+        elif "Vibrational entropy               ..." in l:
+            vibrational_entropy = float(l.split()[-4])
+        elif "Rotational entropy                ..." in l:
+            rotational_entropy = float(l.split()[-4])
+        elif "Translational entropy             ..." in l:
+            translational_entropy = float(l.split()[-4])
+        elif "G-E(el)" in l:
+            gibbs_correction = float(l.split()[-4])
+        elif "rotational entropy values for sn=" in l:
+            sn_idx = i
+            sn_nums = int(l.split(",")[-1].split()[0].rstrip(":"))
+            if lines[sn_idx + 1] == "\n":
+                # in orca6 the sn_idx line is followed by an empty line
+                sn_idx += 1
+
+    sn_rot_entropy = {}
+    if "sn_idx" in locals():
+        for i, l in enumerate(lines[sn_idx + 2 : sn_idx + 2 + sn_nums]):
+            sn_rot_entropy[i] = float(l.split()[-4])
+
+    # format into dict
+    detailed_contributions = {
+        "zero_point_energy": zero_point_energy,
+        "thermal_vibrational_correction": thermal_vibrational_correction,
+        "thermal_rotational_correction": thermal_rotational_correction,
+        "thermal_translational_correction": thermal_translational_correction,
+        "thermal_enthalpy_correction": thermal_enthalpy_correction,
+        "electronic_entropy": electronic_entropy,
+        "vibrational_entropy": vibrational_entropy,
+        "rotational_entropy": rotational_entropy,
+        "translation_entropy": translational_entropy,
+        "gibbs_correction": gibbs_correction,
+        "sn_rot_entropy": sn_rot_entropy,
+    }
+
+    return detailed_contributions
+
+
 def get_orca_results(
     lines: List[str],
     properties: List[str] = [
@@ -337,6 +390,7 @@ def get_orca_results(
         "mulliken_charges": read_mulliken_charges,  # always read this
         "loewdin_charges": read_loewdin_charges,  # always read this
         "hirshfeld_charges": read_hirshfeld_charges,  # optional
+        "detailed_contributions": get_detailed_contributions,
     }
 
     if not normal_termination(lines):
