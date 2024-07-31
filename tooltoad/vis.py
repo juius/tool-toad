@@ -13,6 +13,8 @@ from rdkit import Chem
 from rdkit.Chem import Draw, rdDepictor
 from rdkit.Geometry import Point2D
 
+from tooltoad.chemutils import ac2xyz
+
 # load matplotlib style
 plt.style.use(os.path.dirname(__file__) + "/data/paper.mplstyle")
 PAPER = Path("/groups/kemi/julius/opt/tm-catalyst-paper/figures")
@@ -204,7 +206,9 @@ def draw3d(
     overlay: bool = False,
     confId: int = -1,
     atomlabel: bool = False,
-    kekulize=True,
+    kekulize: bool = True,
+    width: float = 600,
+    height: float = 400,
 ):
     """Draw 3D structures in Jupyter notebook using py3Dmol.
 
@@ -217,8 +221,6 @@ def draw3d(
     Returns:
         Py3Dmol.view: 3D view object.
     """
-    width = 900
-    height = 600
     p = py3Dmol.view(width=width, height=height)
     if not isinstance(mols, list):
         mols = [mols]
@@ -254,6 +256,68 @@ def draw3d(
                    }}""",
         )
     p.zoomTo()
+    return p
+
+
+def show_traj(input: str | dict, width: float = 600, height: float = 400):
+    """Show xyz trajectory.
+
+    Args:
+        input (str | dict): Trajectory, either as a string or a dict["traj"].
+        width (float, optional): Width of py3dmol. Defaults to 600.
+        height (float, optional): Height of py3dmol. Defaults to 400.
+    """
+    if isinstance(input, str):
+        traj = input
+    elif isinstance(input, dict):
+        traj = input.get("traj")
+        if not traj:
+            raise ValueError
+    else:
+        raise ValueError
+    p = py3Dmol.view(width=width, height=height)
+    p.addModelsAsFrames(traj, "xyz")
+    p.animate({"loop": "forward", "reps": 3})
+    p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
+    return p
+
+
+def show_vibs(
+    results: dict,
+    vId: int = 0,
+    width: float = 600,
+    height: float = 400,
+    numFrames: int = 20,
+    amplitude: float = 1.0,
+):
+    """Show normal mode vibration."""
+    input = results
+    vib = input.get("vibs")[vId]
+    mode = vib["mode"]
+    frequency = vib["frequency"]
+    atoms = results["atoms"]
+    opt_coords = results["opt_coords"]
+    xyz = ac2xyz(atoms, opt_coords)
+
+    p = py3Dmol.view(width=width, height=height)
+    p.addModel(xyz, "xyz")
+    propmap = []
+    for j, m in enumerate(mode):
+        propmap.append(
+            {
+                "index": j,
+                "props": {
+                    "dx": m[0],
+                    "dy": m[1],
+                    "dz": m[2],
+                },
+            }
+        )
+    p.mapAtomProperties(propmap)
+    p.vibrate(numFrames, amplitude, True)
+    p.animate({"loop": "backAndForth", "interval": 1, "reps": 20})
+    p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
+    print(f"Normal mode {vId} with frequency {frequency} cm^-1")
     return p
 
 
