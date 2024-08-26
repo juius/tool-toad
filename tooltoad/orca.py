@@ -82,6 +82,7 @@ def orca_calculate(
             # charges not printed when COSMO-RS is used
             properties.pop(2)
             properties.pop(1)
+            properties.append("cosmors_dgsolv")
         if "hirshfeld" in clean_option_keys:
             properties.append("hirshfeld_charges")
         if any(p in clean_option_keys for p in ("opt", "optts")):
@@ -366,6 +367,12 @@ def get_detailed_contributions(lines: List[str]) -> dict:
     return detailed_contributions
 
 
+def read_cosmors(lines: List[str]) -> float:
+    for line in reversed(lines):
+        if "Free energy of solvation (dGsolv)" in line:
+            return float(line.split(":")[1].split()[0])
+
+
 def get_orca_results(
     lines: List[str],
     properties: List[str] = [
@@ -394,7 +401,8 @@ def get_orca_results(
         "mulliken_charges": read_mulliken_charges,  # always read this
         "loewdin_charges": read_loewdin_charges,  # always read this
         "hirshfeld_charges": read_hirshfeld_charges,  # optional
-        "detailed_contributions": get_detailed_contributions,
+        "detailed_contributions": get_detailed_contributions,  # optional
+        "cosmors_dgsolv": read_cosmors,  # optional
     }
 
     if not normal_termination(lines):
