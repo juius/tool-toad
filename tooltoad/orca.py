@@ -78,6 +78,10 @@ def orca_calculate(
         clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
         properties = ["electronic_energy", "mulliken_charges", "loewdin_charges"]
+        if "cosmors" in clean_option_keys:
+            # charges not printed when COSMO-RS is used
+            properties.pop(2)
+            properties.pop(1)
         if "hirshfeld" in clean_option_keys:
             properties.append("hirshfeld_charges")
         if any(p in clean_option_keys for p in ("opt", "optts")):
