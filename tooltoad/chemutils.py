@@ -209,6 +209,7 @@ def ac2mol(
     atoms: List[str],
     coords: List[list],
     charge: int = 0,
+    perceive_connectivity: bool = True,
 ):
     """Converts atom symbols and coordinates to RDKit molecule."""
     xyz = ac2xyz(atoms, coords)
@@ -216,7 +217,8 @@ def ac2mol(
     Chem.SanitizeMol(rdkit_mol)
     if charge != 0:
         rdkit_mol.GetAtomWithIdx(0).SetFormalCharge(charge)
-
+    if perceive_connectivity:
+        _determineConnectivity(rdkit_mol)
     return rdkit_mol
 
 
