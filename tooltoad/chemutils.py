@@ -205,12 +205,18 @@ def ac2xyz(atoms: List[str], coords: List[list]):
     return xyz
 
 
-def ac2mol(atoms: List[str], coords: List[list], useHueckel=True, **kwargs):
+def ac2mol(
+    atoms: List[str],
+    coords: List[list],
+    charge: int = 0,
+):
     """Converts atom symbols and coordinates to RDKit molecule."""
     xyz = ac2xyz(atoms, coords)
     rdkit_mol = Chem.MolFromXYZBlock(xyz)
     Chem.SanitizeMol(rdkit_mol)
-    _determineConnectivity(rdkit_mol, useHueckel=useHueckel, **kwargs)
+    if charge != 0:
+        rdkit_mol.GetAtomWithIdx(0).SetFormalCharge(charge)
+
     return rdkit_mol
 
 
