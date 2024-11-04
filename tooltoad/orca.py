@@ -77,7 +77,7 @@ def orca_calculate(
     if normal_termination(lines):
         clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
-        properties = ["electronic_energy", "mulliken_charges", "loewdin_charges"]
+        properties = ["electronic_energy"]
         if "cosmors" in clean_option_keys:
             # charges not printed when COSMO-RS is used
             properties.pop(2)
@@ -410,7 +410,11 @@ def get_orca_results(
 
     results = {"normal_termination": True}
     for property in properties:
-        results[property] = reader[property](lines)
+        try:
+            results[property] = reader[property](lines)
+        except Exception as e:
+            _logger.error(f"Failed to read property {property}: {e}")
+            results[property] = None
 
     if "opt_structure" in properties:
         results["atoms"], results["opt_coords"] = results["opt_structure"]
