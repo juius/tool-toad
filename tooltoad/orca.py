@@ -3,6 +3,7 @@ from typing import List
 
 import numpy as np
 
+from tooltoad.chemutils import xyz2ac
 from tooltoad.utils import WorkingDir, check_executable, stream
 
 _logger = logging.getLogger("orca")
@@ -78,6 +79,7 @@ def orca_calculate(
         clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
         properties = ["electronic_energy"]
+        additional_properties = []
         if "cosmors" in clean_option_keys:
             # charges not printed when COSMO-RS is used
             properties.pop(2)
@@ -91,7 +93,17 @@ def orca_calculate(
             properties.append("vibs")
             properties.append("gibbs_energy")
             properties.append("detailed_contributions")
+        # ---------- results from additional files --------------
+        if "irc" in clean_option_keys:
+            additional_properties.append("irc")
+        # ---------- check for options in xtra_inp_str ----------
+        if "scan" in xtra_inp_str.lower():
+            additional_properties.append("scan")
         results = get_orca_results(lines, properties=properties)
+        additional_results = get_additional_results(
+            lines, work_dir, additional_properties
+        )
+        results.update(additional_results)
     else:
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("".join(lines))
@@ -371,6 +383,44 @@ def read_cosmors(lines: List[str]) -> float:
     for line in reversed(lines):
         if "Free energy of solvation (dGsolv)" in line:
             return float(line.split(":")[1].split()[0])
+
+
+def read_irc(lines: List[str], work_dir: WorkingDir) -> dict:
+    # check convergence for each direction
+    irc_results = {"forward_converged": False, "backward_converged": False}
+    for line in lines:
+        if "WARD IRC" in line:
+            direction = line.strip(" *").split()[0].lower()
+        if "THE IRC HAS CONVERGED" in line:
+            irc_results[direction + "_converged"] = True
+
+    for direction in ["forward", "backward"]:
+        with open(work_dir / f"input_IRC_{direction[0].upper()}.xyz", "r") as f:
+            xyz = f.read()
+        atoms, coords = xyz2ac(xyz)
+        irc_results[direction] = {"atoms": atoms, "coords": coords}
+    return irc_results
+
+
+def read_scan(lines: List[str], work_dir: WorkingDir) -> dict:
+    return np.loadtxt(work_dir / "input.relaxscanact.dat")
+
+
+def get_additional_results(
+    lines: List[str], work_dir: WorkingDir, properties: list
+) -> dict:
+    reader = {
+        "irc": read_irc,
+        "scan": read_scan,
+    }
+    additional_results = {"normal_termination": True}
+    for property in properties:
+        try:
+            additional_results[property] = reader[property](lines, work_dir)
+        except Exception as e:
+            _logger.error(f"Failed to read property {property}: {e}")
+            additional_results[property] = None
+    return additional_results
 
 
 def get_orca_results(
