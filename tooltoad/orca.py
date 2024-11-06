@@ -97,8 +97,9 @@ def orca_calculate(
         if "irc" in clean_option_keys:
             additional_properties.append("irc")
         # ---------- check for options in xtra_inp_str ----------
-        if "scan" in xtra_inp_str.lower():
-            additional_properties.append("scan")
+        if xtra_inp_str:
+            if "scan" in xtra_inp_str.lower():
+                additional_properties.append("scan")
         results = get_orca_results(lines, properties=properties)
         additional_results = get_additional_results(
             lines, work_dir, additional_properties
@@ -107,7 +108,7 @@ def orca_calculate(
     else:
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("".join(lines))
-        results = {"normal_termination": False}
+        results = {"normal_termination": False, "log": "".join(lines)}
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
