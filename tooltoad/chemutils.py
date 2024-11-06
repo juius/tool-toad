@@ -10,12 +10,87 @@ import networkx as nx
 import numpy as np
 from hide_warnings import hide_warnings
 from rdkit import Chem
-from rdkit.Chem import rdDetermineBonds, rdFMCS, rdMolAlign, rdMolDescriptors
+from rdkit.Chem import (
+    ResonanceMolSupplier,
+    rdDetermineBonds,
+    rdFMCS,
+    rdMolAlign,
+    rdMolDescriptors,
+)
 from rdkit.ML.Cluster import Butina
 
 from tooltoad.utils import stream
 
 logger = logging.getLogger(__name__)
+
+
+class SymmetryMapper:
+    def __init__(self, mol):
+        """Initialize the SymmetryMapper with an RDKit Mol object.
+
+        Generates resonance structures and calculates the atom rankings.
+        """
+        self.mol = mol
+        self.resonance_structures = list(
+            ResonanceMolSupplier(mol, Chem.ResonanceFlags.ALLOW_INCOMPLETE_OCTETS)
+        )
+        self.equivalence_map = self._calculate_equivalence_map()
+
+    def _calculate_equivalence_map(self):
+        """Calculate the mapping of symmetry-equivalent atoms based on
+        canonical ranks across all resonance structures.
+
+        Returns a dictionary with canonical rank as keys and atom
+        indices as values.
+        """
+        # Initialize an array to hold rank counts for each atom across all resonance structures
+        atom_count = len(self.mol.GetAtoms())
+        rank_matrix = np.zeros((len(self.resonance_structures), atom_count), dtype=int)
+
+        # Get ranks for each resonance structure and store them in the matrix
+        for i, res_mol in enumerate(self.resonance_structures):
+            ranks = Chem.CanonicalRankAtoms(res_mol, breakTies=False)
+            rank_matrix[i] = ranks
+
+        # Calculate the average rank for each atom across resonance forms
+        average_ranks = np.mean(rank_matrix, axis=0)
+
+        # Create an equivalence map based on average ranks
+        equivalence_map = {}
+        for idx, avg_rank in enumerate(average_ranks):
+            rank = int(avg_rank)  # Use integer representation for mapping
+            if rank not in equivalence_map:
+                equivalence_map[rank] = []
+            equivalence_map[rank].append(idx)
+
+        # Filter out entries with only one atom (not symmetric)
+        equivalence_map = {
+            rank: indices
+            for rank, indices in equivalence_map.items()
+            if len(indices) > 1
+        }
+
+        return equivalence_map
+
+    def get_equivalent_atoms(self, atom_id):
+        """Given an atom ID, return a list of equivalent atom IDs."""
+        for rank, indices in self.equivalence_map.items():
+            if atom_id in indices:
+                return [atom for atom in indices if atom != atom_id]
+        return []
+
+    def get_canonical_ranks(self):
+        """Return a list of canonical ranks averaged across all resonance
+        structures."""
+        atom_count = len(self.mol.GetAtoms())
+        rank_matrix = np.zeros((len(self.resonance_structures), atom_count), dtype=int)
+
+        for i, res_mol in enumerate(self.resonance_structures):
+            ranks = Chem.CanonicalRankAtoms(res_mol, breakTies=False)
+            rank_matrix[i] = ranks
+
+        average_ranks = np.mean(rank_matrix, axis=0)
+        return average_ranks.astype(int).tolist()
 
 
 def hartree2kcalmol(hartree: float) -> float:
