@@ -5,7 +5,6 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdMolTransforms
-from utils import fibonacci_sphere, get_rotation_matrix
 
 from tooltoad.chemutils import (
     _determineConnectivity,
@@ -16,6 +15,8 @@ from tooltoad.chemutils import (
 from tooltoad.utils import stream
 from tooltoad.vis import draw3d
 from tooltoad.xtb import xtb_calculate
+
+from .utils import fibonacci_sphere, get_rotation_matrix
 
 # TODO: take care of charges
 # TODO: add restart
