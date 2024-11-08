@@ -1,9 +1,15 @@
+import contextlib
+import os
 import random
 import shutil
+import signal
 import string
 import subprocess
+import sys
 import warnings
 from pathlib import Path
+
+import joblib
 
 alphabet = string.ascii_lowercase + string.digits
 
@@ -19,16 +25,27 @@ def stream(cmd: str, cwd: str = None, shell: bool = True):
         universal_newlines=True,
         shell=shell,
         cwd=cwd,
+        preexec_fn=os.setsid,
     )
-    for stdout_line in iter(popen.stdout.readline, ""):
-        yield stdout_line
 
-    # Yield errors
-    stderr = popen.stderr.read()
-    popen.stdout.close()
-    yield stderr
+    def terminate_process_group():
+        print("Interrupted! Terminating the external program and its process group...")
+        os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
+        popen.wait()
+        print("External program and its process group terminated.")
+        sys.exit(0)
 
-    return
+    try:
+        for stdout_line in iter(popen.stdout.readline, ""):
+            yield stdout_line
+    except KeyboardInterrupt:
+        terminate_process_group()
+    finally:
+        # Yield errors
+        stderr = popen.stderr.read()
+        popen.stdout.close()
+        yield stderr
+        popen.wait()  # Ensure process termination
 
 
 def check_executable(executable: str):
@@ -104,3 +121,22 @@ class WorkingFile:
     @property
     def stem(self):
         return str(self.path.stem)
+
+
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given
+    as argument."""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
