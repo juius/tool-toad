@@ -38,6 +38,8 @@ class ScanCoord:
     end: float
     nsteps: int
 
+    # TODO: have a metric on how many points i need per angstrom
+
     def __post_init__(self):
         if len(self.atom_ids) == 2:
             self.ctype = "distance"
@@ -451,8 +453,8 @@ class PotentialEnergySurface:
                 ids = sc.atom_ids
                 distance_tensors.append(
                     np.linalg.norm(
-                        self.traj_tensor[:, :, :, ids[0], :]
-                        - self.traj_tensor[:, :, :, ids[1], :],
+                        self.traj_tensor[..., ids[0], :]
+                        - self.traj_tensor[..., ids[1], :],
                         axis=-1,
                     )
                 )
