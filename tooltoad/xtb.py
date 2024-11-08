@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import numpy as np
 
+from tooltoad.chemutils import xyz2ac
 from tooltoad.utils import (
     STANDARD_PROPERTIES,
     WorkingDir,
@@ -23,9 +24,11 @@ def xtb_calculate(
     options: dict = {},
     scr: str = ".",
     n_cores: int = 1,
-    detailed_input: dict = None,
-    calc_dir: str = None,
+    detailed_input: None | dict = None,
+    detailed_input_str: None | str = None,
+    calc_dir: None | str = None,
     xtb_cmd: str = "xtb",
+    force: bool = False,
 ) -> dict:
     """Run xTB calculation.
 
@@ -69,9 +72,14 @@ def xtb_calculate(
     if detailed_input is not None:
         fpath = write_detailed_input(detailed_input, work_dir)
         cmd += f"--input {fpath.name} "
+    if detailed_input_str is not None:
+        fpath = work_dir / "details.inp"
+        with open(fpath, "w") as inp:
+            inp.write(detailed_input_str)
+        cmd += f"--input {fpath.name} "
 
     lines = run_xtb((cmd, xyz_file))
-    if not normal_termination(lines):
+    if not normal_termination(lines) and not force:
         _logger.warning("xTB did not terminate normally")
         _logger.info("".join(lines))
         results = {"normal_termination": False, "log": "".join(lines)}
@@ -97,8 +105,10 @@ def xtb_calculate(
     results["coords"] = coords
     if "opt" in options:
         results["opt_coords"] = read_opt_structure(lines)[-1]
-    if detailed_input:
-        if "scan" in detailed_input:
+    if detailed_input or detailed_input_str:
+        if any(
+            "scan" in x for x in (detailed_input, detailed_input_str) if x is not None
+        ):
             results["scan"] = read_scan(work_dir / "xtbscan.log")
     if calc_dir:
         results["calc_dir"] = str(work_dir)
@@ -166,17 +176,17 @@ def run_xtb(args: Tuple[str]):
     return lines
 
 
-def normal_termination(lines: List[str], strict: bool = True):
+def normal_termination(lines: List[str], strict: bool = False):
     """Check if xTB terminated normally."""
-    first_check = False
+    first_check = 0
     for line in reversed(lines):
         if line.strip().startswith("normal termination"):
-            first_check = True
+            first_check = 1
             if not strict:
                 return first_check
         if "FAILED TO" in line:
             if strict:
-                return False
+                return max([0, first_check - 0.5])
     return first_check
 
 
@@ -264,12 +274,16 @@ def read_scan(scan_file):
         lines = f.readlines()
     nAtoms = int(lines[0])
     nFrames = int(len(lines) / (nAtoms + 2))
-    energies = []
+    pes = []
     traj = []
     for n in range(nFrames):
-        energies.append(float(lines[n * (nAtoms + 2) + 1].split(":")[1].strip("xtb")))
-        traj.append("".join(lines[n * (nAtoms + 2) : n * (nAtoms + 2) + (nAtoms + 2)]))
-    return energies, traj
+        pes.append(float(lines[n * (nAtoms + 2) + 1].split(":")[1].strip("xtb")))
+        traj.append(
+            xyz2ac("".join(lines[n * (nAtoms + 2) : n * (nAtoms + 2) + (nAtoms + 2)]))[
+                1
+            ]
+        )
+    return {"pes": pes, "traj": traj}
 
 
 def read_xtb_results(lines: List[str]):
@@ -346,6 +360,7 @@ def read_xtb_results(lines: List[str]):
             quadrupole_idx = np.nan
 
         # read runtimes
+        wall_time, cpu_time = np.nan, np.nan
         if i > runtime_idx:
             if i == (runtime_idx + 1):
                 wall_time = _get_runtime(line)
