@@ -15,5 +15,6 @@ dependencies = [
     "py3Dmol",
     "tabulate",
     "tomli",
-    "networkx"
+    "networkx",
+    "scikit-learn"
 ]
