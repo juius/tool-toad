@@ -1,0 +1,304 @@
+import json
+import logging
+from dataclasses import asdict, dataclass, field
+
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem import rdDistGeom, rdMolTransforms
+
+from tooltoad.chemutils import (
+    VDW_RADII,
+    SymmetryMapper,
+    _determineConnectivity,
+    ac2mol,
+    ac2xyz,
+    hartree2kcalmol,
+    xyz2ac,
+)
+from tooltoad.utils import WorkingDir, stream
+from tooltoad.vis import draw3d
+from tooltoad.xtb import xtb_calculate
+
+from .utils import fibonacci_sphere, get_rotation_matrix
+
+# TODO: take care of charges
+# TODO: add restart
+# DONE TODO: move mdrun function to method
+# TODO: add xtb command-line options
+# TODO: take dump frequency into account
+# have index array to later trim, array has simulation times?
+
+
+_logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Universe:
+    atoms: list[str]
+    coords: np.ndarray
+    init_topology: None | np.ndarray = None
+    traj_topology: None | np.ndarray = None
+    charge: int = 0
+    multiplicity: int = 1
+    cavity_radius: None | float = None
+    settings: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.coords.ndim == 2:
+            self.coords = self.coords[np.newaxis, np.newaxis, :, :]
+        assert (
+            len(self.atoms) == self.coords.shape[2]
+        ), "Missmatch between number of atoms and coordinates"
+        assert (
+            self.coords.ndim == 4
+        ), "Coordinates should be 2D array with shape (n_frames, n_conformers, n_atoms, 3)"
+        if self.init_topology is None:
+            self.determine_topology()
+        self.frag_ids = [np.asarray(ids) for ids in Chem.GetMolFrags(self.to_rdkit())]
+
+    def __repr__(self):
+        return f"Universe with {len(self.atoms)} atoms"
+
+    @property
+    def n_frames(self):
+        return self.coords.shape[0]
+
+    @property
+    def n_conformers(self):
+        return self.coords.shape[1]
+
+    @property
+    def n_atoms(self):
+        return self.coords.shape[2]
+
+    @classmethod
+    def load(cls, file_path: str):
+        with open(file_path, "r") as f:
+            data = json.load(f)
+
+        # Convert lists back to numpy arrays for the appropriate fields
+        for key in ["coords", "init_topology", "traj_topology"]:
+            if key in data and data[key] is not None:
+                data[key] = np.array(data[key])
+
+        return cls(**data)
+
+    @classmethod
+    def from_dict(cls, results_dict: dict) -> "Universe":
+        assert results_dict[
+            "atoms"
+        ], f"Dict is missing 'atoms' key: {list(results_dict.keys())}"
+        assert results_dict[
+            "coords"
+        ], f"Dict is missing 'coords' key: {list(results_dict.keys())}"
+        return cls(
+            atoms=results_dict["atoms"],
+            coords=results_dict["coords"],
+            cavity_radius=results_dict["cavity_radius"],
+            settings=results_dict["settings"],
+        )
+
+    @classmethod
+    def from_rdkit(cls, mol: Chem.Mol, cId: int = 0):
+        atoms = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        coords = mol.GetConformer(cId).GetPositions()
+        ac = Chem.GetAdjacencyMatrix(mol)
+        return cls(atoms=atoms, coords=coords, init_topology=ac)
+
+    @classmethod
+    def from_smiles(
+        cls,
+        smiles_list: list[str],
+        radius: float = 5.0,
+        random_seed: int = -1,
+        xtb_optimize: bool = True,
+        xtb_options: dict = {},
+    ) -> "Universe":
+        """Initializes a Universe from a list of SMILES strings by embedding
+        them on a sphere.
+
+        Parameters:
+            smiles_list (list[str]): List of SMILES strings.
+            radius (float): Radius of the sphere on which to embed the molecules.
+            random_seed (int): Random seed for reproducibility.
+            xtb_optimize (bool): Whether to optimize the molecules with xTB.
+            xtb_options (dict): Options to pass to xTB.
+
+        Returns:
+            Universe: Initialized Universe object with embedded molecules.
+        """
+        molecules = []
+        for smi in smiles_list:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                raise ValueError(f"Invalid SMILES: {smi}")
+            mol = Chem.AddHs(mol)
+            rdDistGeom.EmbedMolecule(mol, randomSeed=random_seed)
+            if xtb_optimize:
+                atoms = [a.GetSymbol() for a in mol.GetAtoms()]
+                coords = mol.GetConformer().GetPositions()
+                charge = Chem.GetFormalCharge(mol)
+                xtb_options.setdefault("opt", None)
+                opt_results = xtb_calculate(
+                    atoms=atoms, coords=coords, charge=charge, options=xtb_options
+                )
+                mol.GetConformer().SetPositions(
+                    np.asarray(opt_results["opt_coords"], dtype=np.double)
+                )
+            molecules.append(mol)
+
+        all_atoms, all_coords = cls.position_fragments(molecules, radius, random_seed)
+        # TODO: check for distances between molecules too small
+        return cls(atoms=all_atoms, coords=all_coords)
+
+    def save(self, file_path: str):
+        with open(file_path, "w") as f:
+            json.dump(
+                {
+                    k: (v.tolist() if isinstance(v, np.ndarray) else v)
+                    for k, v in asdict(self).items()
+                },
+                f,
+            )
+
+    def to_rdkit(self):
+        return ac2mol(self.atoms, self.coords[0][0], charge=self.charge)
+
+    @staticmethod
+    def position_fragments(
+        fragments: list[Chem.Mol], radius: float = 5.0, random_seed: int = -1
+    ):
+        # Generate uniformly distributed points on the sphere
+        positions = fibonacci_sphere(len(fragments), radius)
+        rng = np.random.default_rng(random_seed if random_seed > 0 else None)
+        rng.shuffle(positions)
+
+        all_atoms = []
+        all_coords = []
+        for mol, pos in zip(fragments, positions):
+            mol_coords = (
+                mol.GetConformer().GetPositions()
+                - rdMolTransforms.ComputeCentroid(mol.GetConformer())
+            )
+            # Apply random rotation
+            angles = rng.random(3) * 2 * np.pi
+            rotation_matrix = get_rotation_matrix(angles)
+            rotated_coords = mol_coords @ rotation_matrix.T
+            all_coords.append(rotated_coords + pos[np.newaxis, :])
+            all_atoms.extend([atom.GetSymbol() for atom in mol.GetAtoms()])
+        return np.asarray(all_atoms), np.concatenate(all_coords)
+
+    def determine_topology(self):
+        self.init_topology = Chem.GetAdjacencyMatrix(
+            _determineConnectivity(self.to_rdkit())
+        )
+
+    def relax(self, options: dict = {}, **xtb_kwargs):
+        options.setdefault("opt", None)
+        mol = self.to_rdkit()
+        atoms = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        coords = mol.GetConformer().GetPositions()
+        charge = Chem.GetFormalCharge(mol)
+        results = xtb_calculate(
+            atoms=atoms, coords=coords, charge=charge, options=options, **xtb_kwargs
+        )
+        self.coords = np.asarray(results["opt_coords"], dtype=np.double)[
+            np.newaxis, np.newaxis, :, :
+        ]
+
+    def find_ncis(
+        self,
+        n_cores: int = 1,
+        energy_threshold: float = 5.0,
+        scr: str = ".",
+    ):
+        working_dir = WorkingDir(root=scr)
+        # run crest with nci
+        with open(working_dir / "universe.xyz", "w") as f:
+            f.write(ac2xyz(self.atoms, self.coords[0][0]))
+        cmd = f"crest universe.xyz --nci -T {n_cores} | tee crest.log"
+        generator = stream(cmd, cwd=str(working_dir))
+        lines = []
+        for line in generator:
+            _logger.debug(line.rstrip("\n"))
+        # TODO: check for normal termination, etc
+
+        with open(working_dir / "crest_conformers.xyz", "r") as f:
+            lines = f.readlines()
+        n_atoms = int(lines[0].strip())
+        xyzs = [lines[i : i + n_atoms + 2] for i in range(0, len(lines), n_atoms + 2)]
+        coords = np.array([xyz2ac("".join(xyz))[1] for xyz in xyzs])
+        energies = np.array([float(line.strip()) for line in lines[1 :: n_atoms + 2]])
+        relative_energies = hartree2kcalmol(energies - np.min(energies))
+        relevant_coords = coords[relative_energies <= energy_threshold]
+        _logger.info(
+            f"CREST found {len(relevant_coords)} NCI conformers within {energy_threshold} kcal/mol"
+        )
+        self.coords = relevant_coords[np.newaxis, :, :, :]
+        working_dir.cleanup()
+
+    def show(self, conf_id: int = 0, frame_id: int = 0, **draw3d_kwargs):
+        draw3d_kwargs.setdefault("width", 500)
+        draw3d_kwargs.setdefault("height", 500)
+        view = draw3d(
+            ac2mol(self.atoms, self.coords[frame_id][conf_id]), **draw3d_kwargs
+        )
+        if self.cavity_radius:
+            view.addSphere(
+                {
+                    "center": {"x": 0, "y": 0, "z": 0},
+                    "radius": self.cavity_radius,
+                    "color": "blue",
+                    "alpha": 0.4,
+                    "wireframe": True,
+                }
+            )
+        view.zoomTo()
+        return view
+
+    @staticmethod
+    def get_interaction_strength(atoms, coords, frag_ids, sigma=0.2, vdw_scaling=0.75):
+        vdw_radii_array = np.vectorize(lambda t: VDW_RADII.get(t, 1.5))(atoms)
+        diffs = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+        pairwise_distances = np.sqrt(np.sum(diffs**2, axis=-1))
+        vdw_sum_matrix = vdw_radii_array[:, np.newaxis] + vdw_radii_array[np.newaxis, :]
+
+        interaction_strength = np.exp(
+            -0.5
+            * np.power(
+                (
+                    np.maximum(pairwise_distances, vdw_sum_matrix * vdw_scaling)
+                    - vdw_sum_matrix * vdw_scaling
+                )
+                / sigma,
+                2.0,
+            )
+        )
+
+        # TODO: potentially something smarter here and allows for intrafragment interactions
+        for ids in frag_ids:
+            interaction_strength[ids[:, None], ids] = 0.0
+
+        return interaction_strength
+
+    def get_interactions(
+        self, conf_id: int = 0, frame_id: int = 0, cutoff=0.5, **kwargs
+    ):
+        interaction_strength = Universe.get_interaction_strength(
+            self.atoms, self.coords[frame_id][conf_id], self.frag_ids, **kwargs
+        )
+        return np.argwhere(np.tril(interaction_strength) > cutoff)
+
+    def get_unique_interactions(self, frame_id: int = 0):
+        mapper = SymmetryMapper(self.to_rdkit())
+        filtered_conf_ids = []
+        filtered_interactions = []
+        stored_interactions = []
+        for conf_id in range(len(self.coords[frame_id])):
+            interactions = self.get_interactions(conf_id=conf_id)
+            canonical_interaction = mapper(interactions).tolist()
+            if canonical_interaction not in stored_interactions:
+                filtered_conf_ids.append(conf_id)
+                filtered_interactions.append(interactions)
+                stored_interactions.append(canonical_interaction)
+        return filtered_conf_ids, filtered_interactions
