@@ -326,7 +326,15 @@ class PotentialEnergySurface:
 
         return fig, ax
 
-    def find_stationary_points(self, point_type="saddle", tolerance=1e-5, prune=True):
+    def find_stationary_points(
+        self,
+        point_type="saddle",
+        tolerance=1e-2,
+        curvature_threshold=1e-3,
+        prune=True,
+        eps=1.0,
+        min_samples=3,
+    ):
         """Locates stationary points (minima, maxima, saddle points) on the
         PES.
 
@@ -355,7 +363,7 @@ class PotentialEnergySurface:
             stationary_points = np.argwhere(maxima)
         elif point_type == "saddle":
             stationary_points = self._detect_saddle_points(
-                smoothed_pes, stationary_mask
+                smoothed_pes, stationary_mask, curvature_threshold
             )
         else:
             raise ValueError(
@@ -373,34 +381,40 @@ class PotentialEnergySurface:
             }
             for idx in stationary_points
         ]
-        if prune:
+        if prune & (len(stationary_points_info) > 0):
             clustered_stationary_points = self._cluster_stationary_points(
-                stationary_points_info
+                stationary_points_info, eps, min_samples
             )
         else:
             clustered_stationary_points = stationary_points_info
         return clustered_stationary_points
 
     @staticmethod
-    def _detect_saddle_points(smoothed_pes, stationary_mask):
+    def _detect_saddle_points(smoothed_pes, stationary_mask, curvature_threshold=1e-3):
         """Detects saddle points by calculating the Hessian and analyzing the
         eigenvalues. A saddle point has a mix of positive and negative
-        eigenvalues in the Hessian.
+        eigenvalues with significant curvature in the Hessian.
 
         Parameters:
         - smoothed_pes (np.ndarray): The PES tensor (after Gaussian smoothing).
         - stationary_mask (np.ndarray): Boolean array indicating potential stationary points.
+        - curvature_threshold (float): Minimum magnitude of eigenvalues to consider significant.
 
         Returns:
         - List of indices of detected saddle points.
         """
         saddle_points = []
         hessian = PotentialEnergySurface._compute_hessian(smoothed_pes)
+
         for idx in np.argwhere(stationary_mask):
             hess_matrix = hessian[tuple(idx)]
             # Eigenvalue decomposition to check for mixed curvatures
             eigvals = np.linalg.eigvals(hess_matrix)
-            if np.any(eigvals > 0) and np.any(eigvals < 0):
+
+            # Check for mixed-sign eigenvalues with significant curvature
+            if np.any(eigvals > curvature_threshold) and np.any(
+                eigvals < -curvature_threshold
+            ):
                 saddle_points.append(tuple(idx))
 
         return saddle_points
