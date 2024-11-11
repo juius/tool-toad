@@ -382,6 +382,8 @@ class PotentialEnergySurface:
             for idx in stationary_points
         ]
         if prune & (len(stationary_points_info) > 0):
+            if len(stationary_points_info[0]["idx"]) == 0:
+                return []
             clustered_stationary_points = self._cluster_stationary_points(
                 stationary_points_info, eps, min_samples
             )
