@@ -399,7 +399,12 @@ def read_irc(lines: List[str], work_dir: WorkingDir) -> dict:
         with open(work_dir / f"input_IRC_{direction[0].upper()}.xyz", "r") as f:
             xyz = f.read()
         atoms, coords = xyz2ac(xyz)
-        irc_results[direction] = {"atoms": atoms, "coords": coords}
+        energy = float(xyz.splitlines()[1].strip().split()[-1])
+        irc_results[direction] = {
+            "atoms": atoms,
+            "opt_coords": coords,
+            "electronic_energy": energy,
+        }
     return irc_results
 
 
