@@ -11,8 +11,9 @@ from tooltoad.chemutils import (
     ac2mol,
     ac2xyz,
     hartree2kcalmol,
+    xyz2ac,
 )
-from tooltoad.utils import stream
+from tooltoad.utils import WorkingDir, stream
 from tooltoad.vis import draw3d
 from tooltoad.xtb import xtb_calculate
 
@@ -204,30 +205,35 @@ class Universe:
         ]
 
     def find_ncis(
-        self, n_cores: int = 1, energy_threshold: float = 5.0, **crest_kwargs
+        self,
+        n_cores: int = 1,
+        energy_threshold: float = 5.0,
+        scr: str = ".",
     ):
+        working_dir = WorkingDir(root=scr)
         # run crest with nci
-        with open(self.working_dir / "universe.xyz", "w") as f:
+        with open(working_dir / "universe.xyz", "w") as f:
             f.write(ac2xyz(self.atoms, self.coords[0][0]))
         cmd = f"crest universe.xyz --nci -T {n_cores} | tee crest.log"
-        generator = stream(cmd, cwd=str(self.working_dir))
+        generator = stream(cmd, cwd=str(working_dir))
         lines = []
         for line in generator:
             _logger.debug(line.rstrip("\n"))
         # TODO: check for normal termination, etc
 
-        with open(self.working_dir / "crest_conformers.xyz", "r") as f:
+        with open(working_dir / "crest_conformers.xyz", "r") as f:
             lines = f.readlines()
         n_atoms = int(lines[0].strip())
         xyzs = [lines[i : i + n_atoms + 2] for i in range(0, len(lines), n_atoms + 2)]
-        coords = np.array([ac2xyz(xyz)[1] for xyz in xyzs])
-        energies = np.array([float(line.strip() for line in lines[1 :: n_atoms + 2])])
+        coords = np.array([xyz2ac("".join(xyz))[1] for xyz in xyzs])
+        energies = np.array([float(line.strip()) for line in lines[1 :: n_atoms + 2]])
         relative_energies = hartree2kcalmol(energies - np.min(energies))
         relevant_coords = coords[relative_energies <= energy_threshold]
         _logger.info(
             f"CREST found {len(relevant_coords)} NCI conformers within {energy_threshold} kcal/mol"
         )
         self.coords = relevant_coords[np.newaxis, :, :, :]
+        working_dir.cleanup()
 
     def show(self, conf_id: int = 0, frame_id: int = 0, **draw3d_kwargs):
         draw3d_kwargs.setdefault("width", 500)
