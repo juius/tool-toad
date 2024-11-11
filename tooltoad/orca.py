@@ -1,7 +1,10 @@
 import logging
+import os
+from pathlib import Path
 from typing import List
 
 import numpy as np
+from dotenv import load_dotenv
 
 from tooltoad.chemutils import xyz2ac
 from tooltoad.utils import WorkingDir, check_executable, stream
@@ -9,8 +12,20 @@ from tooltoad.utils import WorkingDir, check_executable, stream
 _logger = logging.getLogger("orca")
 
 # see https://www.orcasoftware.de/tutorials_orca/first_steps/parallel.html
-ORCA_CMD = "/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411/orca"
-SET_ENV = 'export PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/bin:$PATH" LD_LIBRARY_PATH="/groups/kemi/julius/opt/orca_5_0_4_linux_x86-64_shared_openmpi411:/software/kemi/openmpi/openmpi-4.1.1/lib:$LD_LIBRARY_PATH"'
+
+load_dotenv()
+
+ORCA_CMD = os.getenv("ORCA_EXE", "orca")
+assert (
+    ORCA_CMD
+), "ORCA_EXE not found in environment variables, please set it to the path of the ORCA executable."
+OPEN_MPI_DIR = os.getenv("OPEN_MPI_DIR").rstrip("/")
+assert (
+    OPEN_MPI_DIR
+), "OPEN_MPI_DIR not found in environment variables, please set it to the path of the OpenMPI installation."
+ORCA_DIR = Path(ORCA_CMD).parent
+XTB_EXE = os.getenv("XTB_EXE", "xtb")
+SET_ENV = f'env - XTBEXE={XTB_EXE} PATH="{ORCA_DIR}:{OPEN_MPI_DIR}/bin:$PATH" LD_LIBRARY_PATH="{OPEN_MPI_DIR}/lib:$LD_LIBRARY_PATH" DYLD_LIBRARY_PATH="{OPEN_MPI_DIR}/lib:$DYLD_LIBRARY_PATH"'
 
 
 def orca_calculate(
