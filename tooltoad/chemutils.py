@@ -23,6 +23,14 @@ from tooltoad.utils import stream
 
 logger = logging.getLogger(__name__)
 
+VDW_RADII = {
+    "C": 1.7,
+    "N": 1.55,
+    "O": 1.52,
+    "H": 1.2,
+    # Add more as needed
+}
+
 
 class SymmetryMapper:
     def __init__(self, mol):
@@ -91,6 +99,22 @@ class SymmetryMapper:
 
         average_ranks = np.mean(rank_matrix, axis=0)
         return average_ranks.astype(int).tolist()
+
+    def __call__(self, structure):
+        ranks = self.get_canonical_ranks()
+        if isinstance(structure, int):
+            # Map integer to its rank
+            return ranks[structure]
+        elif isinstance(structure, np.ndarray):
+            if structure.size == 0:
+                return structure
+            # Convert numpy array element-wise using ranks
+            return np.vectorize(lambda x: ranks[x])(structure)
+        elif isinstance(structure, list):
+            # Recursively process each item in the list
+            return [self(s) for s in structure]
+        else:
+            raise ValueError(f"Unknown type {type(structure)}")
 
 
 def hartree2kcalmol(hartree: float) -> float:
