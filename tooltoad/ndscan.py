@@ -10,25 +10,11 @@ from scipy.ndimage import gaussian_filter, laplace
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
-from tooltoad.chemutils import hartree2kcalmol
+from tooltoad.chemutils import COVALENT_RADII, VDW_RADII, hartree2kcalmol
 from tooltoad.utils import tqdm_joblib
 from tooltoad.xtb import xtb_calculate
 
 _logger = logging.getLogger(__name__)
-
-COVALENT_RADII = {
-    "H": 0.31,
-    "C": 0.76,
-    "N": 0.71,
-    "O": 0.66,
-}
-
-VDW_RADII = {
-    "H": 1.2,
-    "C": 1.7,
-    "N": 1.55,
-    "O": 1.52,
-}
 
 
 @dataclass

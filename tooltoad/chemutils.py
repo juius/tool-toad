@@ -23,6 +23,14 @@ from tooltoad.utils import stream
 
 logger = logging.getLogger(__name__)
 
+COVALENT_RADII = {
+    "H": 0.31,
+    "C": 0.76,
+    "N": 0.71,
+    "O": 0.66,
+}
+
+
 VDW_RADII = {
     "C": 1.7,
     "N": 1.55,
