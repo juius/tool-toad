@@ -28,6 +28,7 @@ VDW_RADII = {
     "N": 1.55,
     "O": 1.52,
     "H": 1.2,
+    "S": 1.8,
     # Add more as needed
 }
 
