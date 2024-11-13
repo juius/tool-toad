@@ -1,0 +1,111 @@
+import logging
+
+import numpy as np
+from joblib import Parallel, delayed
+from rdkit import Chem
+from tqdm import tqdm
+
+from tooltoad.chemutils import ac2mol, ac2xyz, hartree2kcalmol, xyz2ac
+from tooltoad.orca import orca_calculate
+from tooltoad.utils import WorkingDir, stream, tqdm_joblib
+
+_logger = logging.getLogger(__name__)
+
+
+def run_crest(
+    atoms: list[str],
+    coords: list[list[float]],
+    charge: int = 0,
+    n_cores: int = 1,
+    calc_dir: None | str = None,
+    scr: str = ".",
+    keep_files: bool = False,
+    **crest_kwargs,
+):
+    wd = WorkingDir(root=scr, name=calc_dir)
+    # check for fragments
+    rdkit_mol = ac2mol(atoms, coords)
+    if len(Chem.GetMolFrags(rdkit_mol)) > 1 and "nci" not in [
+        s.lower() for s in crest_kwargs.keys()
+    ]:
+        _logger.warning(
+            "Multiple fragments detected. Recommended to run CREST in NCI mode (`nci=True`)."
+        )
+    with open(wd / "input.xyz", "w") as f:
+        f.write(ac2xyz(atoms, coords))
+
+    # crest CREST command
+    cmd = f"crest input.xyz -c {charge} -T {n_cores}"
+    for key, value in crest_kwargs.items():
+        if value is None or value is True:
+            cmd += f"--{key} "
+        else:
+            cmd += f"--{key} {str(value)} "
+    cmd += " | tee crest.log"
+    _logger.info(f"Running CREST with command: {cmd}")
+    generator = stream(cmd, cwd=str(wd))
+    lines = []
+    normal_termination = False
+    for line in generator:
+        _logger.debug(line.rstrip("\n"))
+        lines.append(line)
+        if "CREST terminated normally" in line:
+            normal_termination = True
+    try:
+        with open(wd / "crest_conformers.xyz", "r") as f:
+            out_lines = f.readlines()
+    except Exception & (not normal_termination):
+        _logger.error("CREST did not terminate normally.")
+        _logger.info("".join(lines))
+        return None
+    except Exception as e:
+        raise e
+    if not normal_termination:
+        _logger.warning("CREST did not terminate normally.")
+    n_atoms = int(out_lines[0].strip())
+    xyzs = [
+        out_lines[i : i + n_atoms + 2] for i in range(0, len(out_lines), n_atoms + 2)
+    ]
+    coords = [xyz2ac("".join(xyz))[1] for xyz in xyzs]
+    energies = [float(line.strip()) for line in out_lines[1 :: n_atoms + 2]]
+    rel_energies = [hartree2kcalmol(e - min(energies)) for e in energies]
+    if not keep_files:
+        wd.cleanup()
+    return [
+        {"atoms": atoms, "coords": c, "xtb_energy": e}
+        for c, e in zip(coords, rel_energies)
+    ]
+
+
+def refine_with_orca(
+    crest_out,
+    charge=0,
+    multiplicity=1,
+    options={},
+    target="electronic_energy",
+    n_cores=1,
+    orca_cmd="orca",
+    set_env="",
+):
+    atoms = crest_out[0]["atoms"]
+    all_coords = [r["coords"] for r in crest_out]
+    with tqdm_joblib(tqdm(desc="Orca Calculations", total=len(all_coords))):
+        results = Parallel(n_jobs=n_cores, prefer="threads")(
+            delayed(orca_calculate)(
+                atoms=atoms,
+                coords=coords,
+                charge=charge,
+                multiplicity=multiplicity,
+                options=options,
+                orca_cmd=orca_cmd,
+                set_env=set_env,
+            )
+            for coords in all_coords
+        )
+    new_energies = np.array([r.get(target, np.nan) for r in results])
+    new_energies -= np.nanmin(new_energies)
+    for r, e in zip(crest_out, new_energies):
+        r["orca_energy"] = hartree2kcalmol(float(e))
+    # sort by orca energy
+    crest_out.sort(key=lambda x: x["orca_energy"])
+    return crest_out
