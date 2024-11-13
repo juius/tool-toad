@@ -35,7 +35,7 @@ def run_crest(
         f.write(ac2xyz(atoms, coords))
 
     # crest CREST command
-    cmd = f"crest input.xyz -c {charge} -T {n_cores}"
+    cmd = f"crest input.xyz -c {charge} --T {n_cores} "
     for key, value in crest_kwargs.items():
         if value is None or value is True:
             cmd += f"--{key} "
