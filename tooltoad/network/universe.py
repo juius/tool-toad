@@ -102,8 +102,9 @@ class Universe:
     def from_rdkit(cls, mol: Chem.Mol, cId: int = 0):
         atoms = [atom.GetSymbol() for atom in mol.GetAtoms()]
         coords = mol.GetConformer(cId).GetPositions()
+        charge = Chem.GetFormalCharge(mol)
         ac = Chem.GetAdjacencyMatrix(mol)
-        return cls(atoms=atoms, coords=coords, init_topology=ac)
+        return cls(atoms=atoms, coords=coords, charge=charge, init_topology=ac)
 
     @classmethod
     def from_smiles(
@@ -128,6 +129,7 @@ class Universe:
             Universe: Initialized Universe object with embedded molecules.
         """
         molecules = []
+        charges = []
         for smi in smiles_list:
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
@@ -138,6 +140,7 @@ class Universe:
                 atoms = [a.GetSymbol() for a in mol.GetAtoms()]
                 coords = mol.GetConformer().GetPositions()
                 charge = Chem.GetFormalCharge(mol)
+                charges.append(charge)
                 xtb_options.setdefault("opt", None)
                 opt_results = xtb_calculate(
                     atoms=atoms, coords=coords, charge=charge, options=xtb_options
@@ -149,7 +152,7 @@ class Universe:
 
         all_atoms, all_coords = cls.position_fragments(molecules, radius, random_seed)
         # TODO: check for distances between molecules too small
-        return cls(atoms=all_atoms, coords=all_coords)
+        return cls(atoms=all_atoms, coords=all_coords, charge=sum(charges))
 
     def save(self, file_path: str):
         with open(file_path, "w") as f:
@@ -216,7 +219,7 @@ class Universe:
         # run crest with nci
         with open(working_dir / "universe.xyz", "w") as f:
             f.write(ac2xyz(self.atoms, self.coords[0][0]))
-        cmd = f"crest universe.xyz --nci -T {n_cores} | tee crest.log"
+        cmd = f"crest universe.xyz --nci --chrg {self.charge} --T {n_cores} | tee crest.log"
         generator = stream(cmd, cwd=str(working_dir))
         lines = []
         for line in generator:
