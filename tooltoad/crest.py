@@ -54,12 +54,10 @@ def run_crest(
     try:
         with open(wd / "crest_conformers.xyz", "r") as f:
             out_lines = f.readlines()
-    except Exception & (not normal_termination):
-        _logger.error("CREST did not terminate normally.")
+    except Exception as e:
+        _logger.error(f"CREST did not terminate normally.\n{e}")
         _logger.info("".join(lines))
         return None
-    except Exception as e:
-        raise e
     if not normal_termination:
         _logger.warning("CREST did not terminate normally.")
     n_atoms = int(out_lines[0].strip())
