@@ -40,6 +40,7 @@ def orca_calculate(
     calc_dir: str = None,
     orca_cmd: str = ORCA_CMD,
     set_env: str = SET_ENV,
+    force: bool = False,
 ) -> dict:
     """Runs ORCA calculation.
 
@@ -89,7 +90,7 @@ def orca_calculate(
         lines.append(line)
         _logger.debug(line.rstrip("\n"))
 
-    if normal_termination(lines):
+    if normal_termination(lines) or force:
         clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
         properties = ["electronic_energy"]
@@ -423,7 +424,24 @@ def read_irc(lines: List[str], work_dir: WorkingDir) -> dict:
 
 
 def read_scan(lines: List[str], work_dir: WorkingDir) -> dict:
-    return np.loadtxt(work_dir / "input.relaxscanact.dat")
+    scan_results = {}
+    scan_results["overview"] = np.loadtxt(work_dir / "input.relaxscanact.dat").tolist()
+    with open(work_dir / "input.allxyz", "r") as f:
+        lines = f.readlines()
+    nAtoms = int(lines[0])
+    nFrames = int(len(lines) / (nAtoms + 2))
+    pes = []
+    traj = []
+    for n in range(nFrames):
+        pes.append(float(lines[n * (nAtoms + 3) + 1].split("E ")[-1].strip()))
+        traj.append(
+            xyz2ac("".join(lines[n * (nAtoms + 3) : n * (nAtoms + 3) + (nAtoms + 2)]))[
+                1
+            ]
+        )
+    scan_results["pes"] = pes
+    scan_results["traj"] = traj
+    return scan_results
 
 
 def get_additional_results(
