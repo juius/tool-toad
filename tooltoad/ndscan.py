@@ -11,6 +11,7 @@ from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
 from tooltoad.chemutils import COVALENT_RADII, VDW_RADII, hartree2kcalmol
+from tooltoad.orca import orca_calculate
 from tooltoad.utils import tqdm_joblib
 from tooltoad.xtb import xtb_calculate
 
@@ -28,11 +29,14 @@ class ScanCoord:
 
     def __post_init__(self):
         if len(self.atom_ids) == 2:
-            self.ctype = "distance"
+            self.xtb_ctype = "distance"
+            self.orca_ctype = "B"
         elif len(self.atom_ids) == 3:
-            self.ctype = "angle"
+            self.xtb_ctype = "angle"
+            self.orca_ctype = "A"
         elif len(self.atom_ids) == 4:
-            self.ctype = "dihedral"
+            self.xtb_ctype = "dihedral"
+            self.orca_ctype = "D"
         else:
             raise ValueError("Invalid number of atom_ids")
 
@@ -41,8 +45,12 @@ class ScanCoord:
         return np.linspace(self.start, self.end, self.nsteps)
 
     @property
-    def atom_ids_str(self):
+    def xtb_atom_ids_str(self):
         return ", ".join([str(idx + 1) for idx in self.atom_ids])
+
+    @property
+    def orca_atom_ids_str(self):
+        return " ".join([str(idx + 1) for idx in self.atom_ids])
 
     @classmethod
     def from_current_position(
@@ -130,10 +138,12 @@ class PotentialEnergySurface:
         input_strings = []
         for constains in constrain_points:
             input_str = f"$constrain\n force constant={force_constant}\n"
-            input_str += f" {scan_coord.ctype}: {scan_coord.atom_ids_str}, auto\n"
+            input_str += (
+                f" {scan_coord.xtb_ctype}: {scan_coord.xtb_atom_ids_str}, auto\n"
+            )
             for i, c in enumerate(constains):
                 sc = scan_coords[i + 1]
-                input_str += f" {sc.ctype}: {sc.atom_ids_str}, {c}\n"
+                input_str += f" {sc.xtb_ctype}: {sc.xtb_atom_ids_str}, {c}\n"
             input_str += "$scan\n"
             input_str += (
                 f" 1: {scan_coord.start}, {scan_coord.end}, {scan_coord.nsteps}\n"
@@ -213,6 +223,139 @@ class PotentialEnergySurface:
         self.traj_tensor = np.moveaxis(traj_tensor, -3, 0)
         self.check_scan_quality()
 
+    @staticmethod
+    def _construct_orca_scan(
+        scan_coords=list[dict] | list[ScanCoord],
+        max_cycle: int = 10,
+    ):
+        """Construct Orca input strings for a multi-dimensional scan.
+
+        Args:
+            scan_coords (list[], optional): List of scan coordinates. Defaults to list[dict] | list[ScanCoord].
+            force_constant (float, optional): Force constant for the scan.. Defaults to 0.5.
+            max_cycle (int, optional): Maximum number of optimization cycles.. Defaults to 10.
+
+        Returns:
+            scan_value_tensor (np.ndarray): Array of scan values.
+            input_strings (list[str]): List of input strings for xTB.
+        """
+
+        scan_coord = scan_coords[0]
+        if len(scan_coords) > 1:
+            dims = np.meshgrid(*[s.range for s in scan_coords[1:]], indexing="ij")
+            constrain_points = np.vstack([d.reshape(-1) for d in dims]).T
+        else:
+            constrain_points = np.array([[]])
+        scan_coord = scan_coords[0]
+        if len(scan_coords) > 1:
+            dims = np.meshgrid(*[s.range for s in scan_coords[1:]], indexing="ij")
+            constrain_points = np.vstack([d.reshape(-1) for d in dims]).T
+        else:
+            constrain_points = np.array([[]])
+        input_strings = []
+        for constains in constrain_points:
+            input_str = f"%geom\n  MaxIter {max_cycle}\n  Scan\n"
+            input_str += f"    {scan_coord.orca_ctype} {scan_coord.orca_atom_ids_str} = {scan_coord.start:.06f}, {scan_coord.end:.06f}, {scan_coord.nsteps}\n"
+            input_str += "  end\n"
+            for i, c in enumerate(constains):
+                if i == 0:
+                    input_str += "  Constraints\n"
+                sc = scan_coords[i + 1]
+                input_str += (
+                    f"    {{{sc.orca_ctype} {sc.orca_atom_ids_str} {c:.06f} C}}\n"
+                )
+                if i == len(constains) - 1:
+                    input_str += "  end\n"
+            input_str += "end"
+            input_strings.append(input_str)
+        scan_value_tensor = np.stack(
+            np.meshgrid(*[s.range for s in scan_coords], indexing="ij"), axis=-1
+        )
+        _logger.info(
+            f"Constructed {len(scan_coords)}D scan with {scan_value_tensor[..., 0].size} points via {len(input_strings)} 1D scans"
+        )
+        return scan_value_tensor, input_strings
+
+    def orca(
+        self,
+        n_cores: int = 1,
+        max_cycle: int = 10,
+        orca_options: dict = {},
+    ):
+        orca_options.setdefault("opt", None)
+        self.scan_value_tensor, detailed_strings = self._construct_orca_scan(
+            self.scan_coords, max_cycle=max_cycle
+        )
+        with tqdm_joblib(tqdm(desc="1-dimensional scans", total=len(detailed_strings))):
+            results = Parallel(n_jobs=n_cores, prefer="threads")(
+                delayed(orca_calculate)(
+                    atoms=self.atoms,
+                    coords=self.coords,
+                    charge=self.charge,
+                    multiplicity=self.multiplicity,
+                    options=orca_options,
+                    xtra_inp_str=s,
+                    force=True,
+                    calc_dir=f"orca_scan_{i:06d}",
+                )
+                for i, s in enumerate(detailed_strings)
+            )
+        # construct results tensors
+        pes_values = np.asarray(
+            [
+                (
+                    r["scan"]["pes"]
+                    if r["normal_termination"]
+                    else np.ones(self.scan_value_tensor.shape[0]) * np.nan
+                )
+                for r in results
+            ]
+        )
+        coord_shape = self.scan_value_tensor[..., 0].shape
+        pes_tensor = pes_values.reshape(*(coord_shape[1:] + (coord_shape[0],)))
+        self.pes_tensor = np.moveaxis(pes_tensor, -1, 0)
+
+        traj_values = np.asarray(
+            [
+                (
+                    r["scan"]["traj"]
+                    if r["normal_termination"]
+                    else np.ones((self.scan_value_tensor.shape[0],) + self.coords.shape)
+                    * np.nan
+                )
+                for r in results
+            ]
+        )
+
+        traj_tensor_shape = (*coord_shape[1:], *traj_values.shape[-3:])
+        traj_tensor = traj_values.reshape(traj_tensor_shape)
+        self.traj_tensor = np.moveaxis(traj_tensor, -3, 0)
+        self.check_scan_quality()
+
+    def refine(self, n_cores: int = 1, orca_options: dict = {}):
+        assert "opt" not in [k.lower() for k in orca_options.keys()]
+
+        with tqdm_joblib(
+            tqdm(desc="Single Point Calculations", total=self.pes_tensor.size)
+        ):
+            results = Parallel(n_jobs=n_cores, prefer="threads")(
+                delayed(orca_calculate)(
+                    atoms=self.atoms,
+                    coords=c,
+                    charge=self.charge,
+                    multiplicity=self.multiplicity,
+                    options=orca_options,
+                    force=True,
+                )
+                for c in self.traj_tensor.reshape(-1, *self.traj_tensor.shape[-2:])
+            )
+        self.refined_pes_tensor = np.array(
+            [
+                r["electronic_energy"] if r["normal_termination"] else np.nan
+                for r in results
+            ]
+        ).reshape(self.pes_tensor.shape)
+
     @property
     def dimension_arrays(self):
         ranges = []
@@ -228,6 +371,7 @@ class PotentialEnergySurface:
         coord_slice: list[int] = [slice(None), slice(None)],
         ax=None,
         cbar=True,
+        refined=False,
         **plt_kwargs,
     ):
         """Plot a 2D slice of the potential energy surface.
@@ -258,7 +402,8 @@ class PotentialEnergySurface:
             fig, ax = plt.subplots()
         else:
             fig = ax.get_figure()
-        pes_slice = self.pes_tensor[tuple(coord_slice)].copy()
+        pes_tensor = self.refined_pes_tensor if refined else self.pes_tensor
+        pes_slice = pes_tensor[tuple(coord_slice)].copy()
         pes_slice -= pes_slice.min()
         pes_slice = hartree2kcalmol(pes_slice)
         cs = ax.contourf(xx, yy, pes_slice, **plt_kwargs)
@@ -273,12 +418,12 @@ class PotentialEnergySurface:
             [ax.set_xlabel, ax.set_ylabel], [self.scan_coords[i] for i in slice_ids]
         ):
             set_label(
-                f"{sc.ctype.capitalize()} {'-'.join([str(i) for i in sc.atom_ids])} {'[Å]' if sc.ctype == 'distance' else '[°]'}"
+                f"{sc.xtb_ctype.capitalize()} {'-'.join([str(i) for i in sc.atom_ids])} {'[Å]' if sc.xtb_ctype == 'distance' else '[°]'}"
             )
 
         return fig, ax, cbar
 
-    def plot_point(self, point, mark_point=True):
+    def plot_point(self, point, mark_point=True, refined=False):
         """Plot all slices through a specific point of the potential energy
         surface.
 
@@ -305,7 +450,7 @@ class PotentialEnergySurface:
             mark_slices.append(self.scan_value_tensor[point][np.array(slice_ids)])
 
         for ax, coord_slice, mark_slide in zip(faxs, coord_slices, mark_slices):
-            self.plot_2d(coord_slice, ax=ax, cbar=False)
+            self.plot_2d(coord_slice, ax=ax, cbar=False, refined=refined)
             if mark_point:
                 ax.axvline(mark_slide[0], color="red", linestyle="dotted", marker="")
                 ax.axhline(mark_slide[1], color="red", linestyle="dotted", marker="")
@@ -320,6 +465,7 @@ class PotentialEnergySurface:
         prune=True,
         eps=1.0,
         min_samples=3,
+        refined=False,
     ):
         """Locates stationary points (minima, maxima, saddle points) on the
         PES.
@@ -332,7 +478,8 @@ class PotentialEnergySurface:
         - List of stationary points with coordinates and PES values.
         """
         # Apply Gaussian filter to smooth the PES tensor for stable derivative estimation
-        smoothed_pes = gaussian_filter(self.pes_tensor, sigma=1.0)
+        pes_tensor = self.refined_pes_tensor if refined else self.pes_tensor
+        smoothed_pes = gaussian_filter(pes_tensor, sigma=1.0)
         gradient_magnitude = np.linalg.norm(np.gradient(smoothed_pes), axis=0)
         stationary_mask = gradient_magnitude < tolerance
 
@@ -362,7 +509,7 @@ class PotentialEnergySurface:
         stationary_points_info = [
             {
                 "idx": tuple(idx),
-                "energy": self.pes_tensor[tuple(idx)],
+                "energy": pes_tensor[tuple(idx)],
                 "grad_norm": gradient_magnitude[tuple(idx)],
             }
             for idx in stationary_points
@@ -451,7 +598,7 @@ class PotentialEnergySurface:
     def check_scan_quality(self, mean_threshold=1e-2, max_threshold=1e-1):
         distance_tensors = []
         for sc in self.scan_coords:
-            if sc.ctype == "distance":
+            if sc.xtb_ctype == "distance":
                 ids = sc.atom_ids
                 distance_tensors.append(
                     np.linalg.norm(
