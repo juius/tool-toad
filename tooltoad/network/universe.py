@@ -214,12 +214,16 @@ class Universe:
         n_cores: int = 1,
         energy_threshold: float = 5.0,
         scr: str = ".",
+        **crest_kwargs,
     ):
         working_dir = WorkingDir(root=scr)
         # run crest with nci
         with open(working_dir / "universe.xyz", "w") as f:
             f.write(ac2xyz(self.atoms, self.coords[0][0]))
-        cmd = f"crest universe.xyz --nci --chrg {self.charge} --T {n_cores} | tee crest.log"
+        cmd = f"crest universe.xyz --nci --chrg {self.charge} --T {n_cores} "
+        for k, v in crest_kwargs.items():
+            cmd += f"--{k} {v} "
+        cmd += " | tee crest.log"
         generator = stream(cmd, cwd=str(working_dir))
         lines = []
         for line in generator:
