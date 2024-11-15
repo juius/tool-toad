@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed
 from matplotlib import cm
-from scipy.ndimage import gaussian_filter, laplace
+from scipy.ndimage import gaussian_filter
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
@@ -479,20 +479,39 @@ class PotentialEnergySurface:
         """
         # Apply Gaussian filter to smooth the PES tensor for stable derivative estimation
         pes_tensor = self.refined_pes_tensor if refined else self.pes_tensor
-        smoothed_pes = gaussian_filter(pes_tensor, sigma=1.0)
-        gradient_magnitude = np.linalg.norm(np.gradient(smoothed_pes), axis=0)
-        stationary_mask = gradient_magnitude < tolerance
+        smoothed_pes = gaussian_filter(
+            pes_tensor, sigma=0.5
+        )  # TODO: have this depend on scan step size
+        if smoothed_pes.ndim == 1:
+            gradient = np.gradient(smoothed_pes)
+            gradient_magnitude = np.abs(gradient)
+            stationary_mask = gradient_magnitude < tolerance
+        else:
+            gradient = np.gradient(smoothed_pes)
+            gradient_magnitude = np.linalg.norm(gradient, axis=0)
+            stationary_mask = gradient_magnitude < tolerance
 
         if point_type == "minima":
             # Use local minima detection in masked areas
             minima = (
-                smoothed_pes == np.minimum(smoothed_pes, laplace(smoothed_pes))
+                smoothed_pes
+                == np.minimum(smoothed_pes, np.roll(smoothed_pes, 1, axis=0))
             ) & stationary_mask
+            for axis in range(1, smoothed_pes.ndim):
+                minima &= smoothed_pes == np.minimum(
+                    smoothed_pes, np.roll(smoothed_pes, 1, axis=axis)
+                )
             stationary_points = np.argwhere(minima)
         elif point_type == "maxima":
+            # Use local maxima detection in masked areas
             maxima = (
-                smoothed_pes == np.maximum(smoothed_pes, laplace(smoothed_pes))
+                smoothed_pes
+                == np.maximum(smoothed_pes, np.roll(smoothed_pes, 1, axis=0))
             ) & stationary_mask
+            for axis in range(1, smoothed_pes.ndim):
+                maxima &= smoothed_pes == np.maximum(
+                    smoothed_pes, np.roll(smoothed_pes, 1, axis=axis)
+                )
             stationary_points = np.argwhere(maxima)
         elif point_type == "saddle":
             stationary_points = self._detect_saddle_points(
