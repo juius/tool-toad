@@ -165,6 +165,7 @@ class PotentialEnergySurface:
         force_constant: float = 1.0,
         max_cycle: int = 10,
         xtb_options: dict = {},
+        scr: str = ".",
     ):
         """Evaluate the PES using xTB.
 
@@ -187,6 +188,7 @@ class PotentialEnergySurface:
                     multiplicity=self.multiplicity,
                     options=xtb_options,
                     detailed_input_str=s,
+                    scr=scr,
                 )
                 for s in detailed_strings
             )
@@ -281,6 +283,7 @@ class PotentialEnergySurface:
         n_cores: int = 1,
         max_cycle: int = 10,
         orca_options: dict = {},
+        scr: str = ".",
     ):
         orca_options.setdefault("opt", None)
         self.scan_value_tensor, detailed_strings = self._construct_orca_scan(
@@ -296,7 +299,7 @@ class PotentialEnergySurface:
                     options=orca_options,
                     xtra_inp_str=s,
                     force=True,
-                    calc_dir=f"orca_scan_{i:06d}",
+                    scr=scr,
                 )
                 for i, s in enumerate(detailed_strings)
             )
@@ -332,7 +335,7 @@ class PotentialEnergySurface:
         self.traj_tensor = np.moveaxis(traj_tensor, -3, 0)
         self.check_scan_quality()
 
-    def refine(self, n_cores: int = 1, orca_options: dict = {}):
+    def refine(self, n_cores: int = 1, orca_options: dict = {}, scr: str = "."):
         assert "opt" not in [k.lower() for k in orca_options.keys()]
 
         with tqdm_joblib(
@@ -346,6 +349,7 @@ class PotentialEnergySurface:
                     multiplicity=self.multiplicity,
                     options=orca_options,
                     force=True,
+                    scr=scr,
                 )
                 for c in self.traj_tensor.reshape(-1, *self.traj_tensor.shape[-2:])
             )
