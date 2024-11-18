@@ -464,7 +464,7 @@ class PotentialEnergySurface:
         curvature_threshold=1e-3,
         prune=True,
         eps=1.0,
-        min_samples=3,
+        min_samples=1,
         refined=False,
     ):
         """Locates stationary points (minima, maxima, saddle points) on the

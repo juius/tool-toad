@@ -15,7 +15,7 @@ def locate_ts(
         options=TS,
         xtra_inp_str=f"""%geom
     {internal_coord_setup}
-    Recalc_Hess 1
+    Recalc_Hess 5
     MaxIter 250
     end
     """,
