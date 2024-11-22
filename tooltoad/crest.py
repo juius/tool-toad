@@ -22,6 +22,7 @@ def run_crest(
     keep_files: bool = False,
     **crest_kwargs,
 ):
+    crest_kwargs.setdefault("noreftopo", None)
     wd = WorkingDir(root=scr, name=calc_dir)
     # check for fragments
     rdkit_mol = ac2mol(atoms, coords)
@@ -49,8 +50,6 @@ def run_crest(
     for line in generator:
         _logger.debug(line.rstrip("\n"))
         lines.append(line)
-        if "CREST terminated normally" in line:
-            normal_termination = True
     try:
         with open(wd / "crest_conformers.xyz", "r") as f:
             out_lines = f.readlines()
@@ -58,6 +57,9 @@ def run_crest(
         _logger.error(f"CREST did not terminate normally.\n{e}")
         _logger.info("".join(lines))
         return None
+    for line in lines:
+        if "CREST terminated normally" in line:
+            normal_termination = True
     if not normal_termination:
         _logger.warning("CREST did not terminate normally.")
     n_atoms = int(out_lines[0].strip())
