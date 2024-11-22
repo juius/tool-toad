@@ -96,9 +96,6 @@ def orca_calculate(
         properties = ["electronic_energy"]
         additional_properties = []
         if "cosmors" in clean_option_keys:
-            # charges not printed when COSMO-RS is used
-            properties.pop(2)
-            properties.pop(1)
             properties.append("cosmors_dgsolv")
         if "hirshfeld" in clean_option_keys:
             properties.append("hirshfeld_charges")
