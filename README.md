@@ -1,11 +1,15 @@
-# ToolToad
-## Functions and utilities for computational chemistry
+# Tool Toad
 
-* QM python wrappers for:
-    * Orca (`orca_calculate`)
-    * xTB (`xtb_calculate`)
-* Calculation of properties:
-    * Gibbs free energy with qRRHO approximation and adjusted standart state (`Thermochemistry`)
-    * CM5 charges (`calc_cm5`)
-    * SA score (`calculateScore` and `sa_target_score_clipped`)
-* Visualization and plotting settings
+### Installation
+```bash
+# clone repository
+pip install .
+```
+
+> [!NOTE]
+> Several function utilize [xTB](https://xtb-docs.readthedocs.io/en/latest/) and [CREST](https://crest-lab.github.io/crest-docs/) which can be installed using `conda install -c conda-forge xtb crest`
+> Furthermore, [ORCA](https://www.faccts.de/orca/) is required for some routines and must be installed manually.
+> The path to the ORCA executable and Open MPI directory must be set as environmental variables `ORCA_EXE` and `OPEN_MPI_DIR`, see [here](./recipes/qm_calculation.md).
+
+### Examples
+Check the [recipes](./recipes/) for example use cases.

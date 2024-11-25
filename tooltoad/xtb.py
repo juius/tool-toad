@@ -105,6 +105,9 @@ def xtb_calculate(
     results["coords"] = coords
     if "opt" in options:
         results["opt_coords"] = read_opt_structure(lines)[-1]
+    if "ohess" in options:
+        results.update(read_thermodynamics(lines))
+        results["opt_coords"] = read_opt_structure(lines)[-1]
     if detailed_input or detailed_input_str:
         if any(
             "scan" in x for x in (detailed_input, detailed_input_str) if x is not None

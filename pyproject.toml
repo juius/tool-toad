@@ -6,15 +6,21 @@ build-backend = "setuptools.build_meta"
 name = "tooltoad"
 version = "1.0.0"
 description = "A collection of computational chemisty utilities"
-readme = "README.rst"
-requires-python = ">=3.6"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
+    "rdkit",
     "numpy",
     "matplotlib",
     "hide_warnings",
+    "tqdm",
+    "python-dotenv",
     "py3Dmol",
     "tabulate",
     "tomli",
     "networkx",
     "scikit-learn"
 ]
+
+[tool.setuptools]
+packages = ["tooltoad"]

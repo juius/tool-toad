@@ -69,7 +69,7 @@ def run_crest(
     coords = [xyz2ac("".join(xyz))[1] for xyz in xyzs]
     energies = [float(line.strip()) for line in out_lines[1 :: n_atoms + 2]]
     rel_energies = [hartree2kcalmol(e - min(energies)) for e in energies]
-    if not keep_files:
+    if not keep_files and not calc_dir:
         wd.cleanup()
     return [
         {"atoms": atoms, "coords": c, "xtb_energy": e}
