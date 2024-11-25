@@ -1,7 +1,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 
@@ -17,8 +16,8 @@ _logger = logging.getLogger("xtb")
 
 
 def xtb_calculate(
-    atoms: List[str],
-    coords: List[list],
+    atoms: list[str],
+    coords: list[list],
     charge: int = 0,
     multiplicity: int = 1,
     options: dict = {},
@@ -33,8 +32,8 @@ def xtb_calculate(
     """Run xTB calculation.
 
     Args:
-        atoms (List[str]): List of atom symbols.
-        coords (List[list]): 3xN list of atom coordinates.
+        atoms (list[str]): list of atom symbols.
+        coords (list[list]): 3xN list of atom coordinates.
         charge (int): Formal charge of molecule.
         multiplicity (int): Spin multiplicity of molecule.
         options (dict): xTB calculation options.
@@ -121,7 +120,7 @@ def xtb_calculate(
     return results
 
 
-def set_threads(n_cores: int):
+def set_threads(n_cores: int) -> None:
     """Set threads and procs environment variables."""
     _ = list(stream("ulimit -s unlimited"))
     os.environ["OMP_STACKSIZE"] = "4G"
@@ -135,7 +134,7 @@ def set_threads(n_cores: int):
     _logger.debug("Set OMP_MAX_ACTIVE_LEVELS to 1")
 
 
-def write_xyz(atoms: List[str], coords: List[list], scr: Path):
+def write_xyz(atoms: list[str], coords: list[list], scr: Path) -> Path:
     """Write xyz coordinate file."""
     natoms = len(atoms)
     xyz = f"{natoms} \n \n"
@@ -147,7 +146,7 @@ def write_xyz(atoms: List[str], coords: List[list], scr: Path):
     return scr / "mol.xyz"
 
 
-def write_detailed_input(details_dict: dict, scr: Path):
+def write_detailed_input(details_dict: dict, scr: Path) -> Path:
     """Write detailed input file for xTB calculation."""
     detailed_input_str = ""
     for key, value in details_dict.items():
@@ -167,7 +166,7 @@ def write_detailed_input(details_dict: dict, scr: Path):
     return fpath
 
 
-def run_xtb(args: Tuple[str]):
+def run_xtb(args: tuple[str]) -> list[str]:
     """Run xTB command for xyz-file in parent directory, logs and returns
     output."""
     cmd, xyz_file = args
@@ -179,7 +178,7 @@ def run_xtb(args: Tuple[str]):
     return lines
 
 
-def normal_termination(lines: List[str], strict: bool = False):
+def normal_termination(lines: list[str], strict: bool = False) -> bool:
     """Check if xTB terminated normally."""
     first_check = 0
     for line in reversed(lines):
@@ -193,10 +192,10 @@ def normal_termination(lines: List[str], strict: bool = False):
     return first_check
 
 
-def read_opt_structure(lines: List[str]):
+def read_opt_structure(lines: list[str]) -> tuple[list[str], list[list[float]]]:
     """Read optimized structure from xTB output."""
 
-    def _parse_coordline(line: str):
+    def _parse_coordline(line: str) -> tuple[str, list[list[float]]]:
         """Parse coordinate line from xyz-file."""
         line = line.split()
         atom = line[0]
@@ -219,7 +218,7 @@ def read_opt_structure(lines: List[str]):
     return atoms, coords
 
 
-def read_thermodynamics(lines: List[str]):
+def read_thermodynamics(lines: list[str]) -> dict:
     """Read thermodynamics output of frequency calculation."""
     thermo_idx = np.nan
     thermo_properties = {}
@@ -238,7 +237,7 @@ def read_thermodynamics(lines: List[str]):
     return thermo_properties
 
 
-def read_gradients(lines: List[str]):
+def read_gradients(lines: list[str]) -> np.ndarray:
     """Read gradients from engrad file."""
     gradients = []
     gradient_idx = np.nan
@@ -255,7 +254,7 @@ def read_gradients(lines: List[str]):
     return gradients.reshape(-1, 3)
 
 
-def read_wbo(wbo_file, n_atoms):
+def read_wbo(wbo_file, n_atoms) -> np.ndarray:
     """Read Wiberg bond order from wbo file."""
     data = np.loadtxt(wbo_file)
     wbo = np.zeros((n_atoms, n_atoms))
@@ -266,12 +265,12 @@ def read_wbo(wbo_file, n_atoms):
     return wbo
 
 
-def read_mulliken(charges_file):
+def read_mulliken(charges_file) -> np.ndarray:
     """Read Mulliken charges from charges file."""
     return np.loadtxt(charges_file)
 
 
-def read_scan(scan_file):
+def read_scan(scan_file) -> dict:
     """Read scan results from xTB output."""
     with open(scan_file, "r") as f:
         lines = f.readlines()
@@ -289,10 +288,10 @@ def read_scan(scan_file):
     return {"pes": pes, "traj": traj}
 
 
-def read_xtb_results(lines: List[str]):
+def read_xtb_results(lines: list[str]) -> dict:
     """Read basic results from xTB log."""
 
-    def _get_runtime(lines: List[str]):
+    def _get_runtime(lines: list[str]) -> float:
         """Reads xTB runtime in seconds."""
         _, _, days, _, hours, _, minutes, _, seconds, _ = line.strip().split()
         total_seconds = (
