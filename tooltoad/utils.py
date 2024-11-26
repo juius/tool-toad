@@ -9,6 +9,7 @@ import threading
 import warnings
 from pathlib import Path
 from queue import Empty, Queue
+from typing import Generator
 
 import joblib
 
@@ -17,14 +18,20 @@ alphabet = string.ascii_lowercase + string.digits
 STANDARD_PROPERTIES = {"xtb": {"total energy": "electronic_energy"}, "orca": {}}
 
 
-def stream(cmd: str, cwd: None | Path = None, shell: bool = True):
-    """Execute command in directory, and stream stdout and stderr concurrently.
+def stream(
+    cmd: str, cwd: None | Path = None, shell: bool = True
+) -> Generator[str, None, None]:
+    """Execute a command and stream stdout and stderr concurrently."""
 
-    :param cmd: The shell command
-    :param cwd: Change directory to work directory
-    :param shell: Use shell or not in subprocess
-    :returns: Generator of stdout and stderr lines.
-    """
+    def enqueue_output(pipe, queue):
+        """Read lines from the pipe and put them into a queue."""
+        try:
+            for line in iter(pipe.readline, ""):
+                queue.put(line)
+        finally:
+            pipe.close()
+
+    # Start the subprocess
     popen = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -35,58 +42,50 @@ def stream(cmd: str, cwd: None | Path = None, shell: bool = True):
         preexec_fn=os.setsid,  # Start a new process group for better control
     )
 
-    def enqueue_output(pipe, queue):
-        """Read lines from the pipe and put them into a queue."""
-        try:
-            for line in iter(pipe.readline, ""):
-                queue.put(line)
-        finally:
-            pipe.close()
-
-    # Queues to hold stdout and stderr lines
+    # Queues for stdout and stderr
     stdout_queue = Queue()
     stderr_queue = Queue()
 
-    # Start threads to read stdout and stderr
+    # Threads for reading stdout and stderr
     stdout_thread = threading.Thread(
         target=enqueue_output, args=(popen.stdout, stdout_queue)
     )
     stderr_thread = threading.Thread(
         target=enqueue_output, args=(popen.stderr, stderr_queue)
     )
-    stdout_thread.daemon = True
-    stderr_thread.daemon = True
     stdout_thread.start()
     stderr_thread.start()
 
     try:
         while True:
-            # Check for stdout lines
-            try:
-                yield stdout_queue.get_nowait()
-            except Empty:
-                pass
+            stdout_done = False
+            stderr_done = False
 
-            # Check for stderr lines
-            try:
-                yield stderr_queue.get_nowait()
-            except Empty:
-                pass
+            # Check stdout
+            while not stdout_done:
+                try:
+                    yield stdout_queue.get_nowait()
+                except Empty:
+                    stdout_done = popen.stdout.closed and stdout_queue.empty()
 
-            # Exit if the process is done and queues are empty
-            if (
-                popen.poll() is not None
-                and stdout_queue.empty()
-                and stderr_queue.empty()
-            ):
+            # Check stderr
+            while not stderr_done:
+                try:
+                    yield stderr_queue.get_nowait()
+                except Empty:
+                    stderr_done = popen.stderr.closed and stderr_queue.empty()
+
+            # Break if the process has finished and both queues are empty
+            if popen.poll() is not None and stdout_done and stderr_done:
                 break
+
     except KeyboardInterrupt:
-        # Handle Ctrl+C to terminate the process group
         print("\nCtrl+C pressed. Terminating the process...")
         os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
         popen.wait()
         print("Process terminated.")
     finally:
+        # Ensure threads are joined and subprocess cleanup
         stdout_thread.join()
         stderr_thread.join()
         popen.wait()
@@ -95,7 +94,8 @@ def stream(cmd: str, cwd: None | Path = None, shell: bool = True):
 def check_executable(executable: str):
     """Check if executable is in PATH."""
     results = stream(f"which {executable}")
-    result = list(results)[0]
+    for result in results:
+        break
     if result.startswith("which: no"):
         warnings.warn(f"Executable {executable} not found in PATH")
 
