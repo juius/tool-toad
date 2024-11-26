@@ -1,4 +1,5 @@
 import logging
+import os
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -44,6 +45,7 @@ def run_crest(
             cmd += f"--{key} {str(value)} "
     cmd += " | tee crest.log"
     _logger.info(f"Running CREST with command: {cmd}")
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
     generator = stream(cmd, cwd=str(wd))
     lines = []
     normal_termination = False

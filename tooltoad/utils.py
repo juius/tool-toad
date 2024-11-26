@@ -5,9 +5,10 @@ import shutil
 import signal
 import string
 import subprocess
-import sys
+import threading
 import warnings
 from pathlib import Path
+from queue import Empty, Queue
 
 import joblib
 
@@ -16,8 +17,14 @@ alphabet = string.ascii_lowercase + string.digits
 STANDARD_PROPERTIES = {"xtb": {"total energy": "electronic_energy"}, "orca": {}}
 
 
-def stream(cmd: str, cwd: str = None, shell: bool = True):
-    """Execute command in directory, and stream stdout."""
+def stream(cmd: str, cwd: None | Path = None, shell: bool = True):
+    """Execute command in directory, and stream stdout and stderr concurrently.
+
+    :param cmd: The shell command
+    :param cwd: Change directory to work directory
+    :param shell: Use shell or not in subprocess
+    :returns: Generator of stdout and stderr lines.
+    """
     popen = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -25,27 +32,64 @@ def stream(cmd: str, cwd: str = None, shell: bool = True):
         universal_newlines=True,
         shell=shell,
         cwd=cwd,
-        preexec_fn=os.setsid,
+        preexec_fn=os.setsid,  # Start a new process group for better control
     )
 
-    def terminate_process_group():
-        print("Interrupted! Terminating the external program and its process group...")
-        os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
-        popen.wait()
-        print("External program and its process group terminated.")
-        sys.exit(0)
+    def enqueue_output(pipe, queue):
+        """Read lines from the pipe and put them into a queue."""
+        try:
+            for line in iter(pipe.readline, ""):
+                queue.put(line)
+        finally:
+            pipe.close()
+
+    # Queues to hold stdout and stderr lines
+    stdout_queue = Queue()
+    stderr_queue = Queue()
+
+    # Start threads to read stdout and stderr
+    stdout_thread = threading.Thread(
+        target=enqueue_output, args=(popen.stdout, stdout_queue)
+    )
+    stderr_thread = threading.Thread(
+        target=enqueue_output, args=(popen.stderr, stderr_queue)
+    )
+    stdout_thread.daemon = True
+    stderr_thread.daemon = True
+    stdout_thread.start()
+    stderr_thread.start()
 
     try:
-        for stdout_line in iter(popen.stdout.readline, ""):
-            yield stdout_line
+        while True:
+            # Check for stdout lines
+            try:
+                yield stdout_queue.get_nowait()
+            except Empty:
+                pass
+
+            # Check for stderr lines
+            try:
+                yield stderr_queue.get_nowait()
+            except Empty:
+                pass
+
+            # Exit if the process is done and queues are empty
+            if (
+                popen.poll() is not None
+                and stdout_queue.empty()
+                and stderr_queue.empty()
+            ):
+                break
     except KeyboardInterrupt:
-        terminate_process_group()
+        # Handle Ctrl+C to terminate the process group
+        print("\nCtrl+C pressed. Terminating the process...")
+        os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
+        popen.wait()
+        print("Process terminated.")
     finally:
-        # Yield errors
-        stderr = popen.stderr.read()
-        popen.stdout.close()
-        yield stderr
-        popen.wait()  # Ensure process termination
+        stdout_thread.join()
+        stderr_thread.join()
+        popen.wait()
 
 
 def check_executable(executable: str):
