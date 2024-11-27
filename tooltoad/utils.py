@@ -1,14 +1,14 @@
 import contextlib
 import os
 import random
+import select
 import shutil
 import signal
 import string
 import subprocess
-import threading
 import warnings
 from pathlib import Path
-from queue import Empty, Queue
+from typing import Generator
 
 import joblib
 
@@ -17,14 +17,11 @@ alphabet = string.ascii_lowercase + string.digits
 STANDARD_PROPERTIES = {"xtb": {"total energy": "electronic_energy"}, "orca": {}}
 
 
-def stream(cmd: str, cwd: None | Path = None, shell: bool = True):
-    """Execute command in directory, and stream stdout and stderr concurrently.
-
-    :param cmd: The shell command
-    :param cwd: Change directory to work directory
-    :param shell: Use shell or not in subprocess
-    :returns: Generator of stdout and stderr lines.
-    """
+def stream(
+    cmd: str, cwd: None | Path = None, shell: bool = True
+) -> Generator[str, None, None]:
+    """Execute a command and stream stdout and stderr concurrently using
+    select."""
     popen = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -35,60 +32,45 @@ def stream(cmd: str, cwd: None | Path = None, shell: bool = True):
         preexec_fn=os.setsid,  # Start a new process group for better control
     )
 
-    def enqueue_output(pipe, queue):
-        """Read lines from the pipe and put them into a queue."""
-        try:
-            for line in iter(pipe.readline, ""):
-                queue.put(line)
-        finally:
-            pipe.close()
+    stdout_fd = popen.stdout.fileno()
+    stderr_fd = popen.stderr.fileno()
 
-    # Queues to hold stdout and stderr lines
-    stdout_queue = Queue()
-    stderr_queue = Queue()
-
-    # Start threads to read stdout and stderr
-    stdout_thread = threading.Thread(
-        target=enqueue_output, args=(popen.stdout, stdout_queue)
-    )
-    stderr_thread = threading.Thread(
-        target=enqueue_output, args=(popen.stderr, stderr_queue)
-    )
-    stdout_thread.daemon = True
-    stderr_thread.daemon = True
-    stdout_thread.start()
-    stderr_thread.start()
+    # Map file descriptors to their streams
+    fd_to_stream = {stdout_fd: popen.stdout, stderr_fd: popen.stderr}
 
     try:
         while True:
-            # Check for stdout lines
-            try:
-                yield stdout_queue.get_nowait()
-            except Empty:
-                pass
+            # Wait for data on stdout or stderr
+            ready_fds, _, _ = select.select([stdout_fd, stderr_fd], [], [], 0.5)
 
-            # Check for stderr lines
-            try:
-                yield stderr_queue.get_nowait()
-            except Empty:
-                pass
+            if not ready_fds and popen.poll() is not None:
+                # No more data and process has exited
+                break
 
-            # Exit if the process is done and queues are empty
-            if (
-                popen.poll() is not None
-                and stdout_queue.empty()
-                and stderr_queue.empty()
-            ):
+            for fd in ready_fds:
+                if fd not in fd_to_stream:
+                    # Skip if the fd is no longer in the map (stream closed)
+                    continue
+
+                stream = fd_to_stream[fd]
+                line = stream.readline()
+                if line:  # If a line was read, yield it
+                    yield line
+                else:
+                    # Stream is closed, remove it from the map
+                    del fd_to_stream[fd]
+
+            # Break when both streams are closed and the process has exited
+            if popen.poll() is not None and not fd_to_stream:
                 break
     except KeyboardInterrupt:
-        # Handle Ctrl+C to terminate the process group
         print("\nCtrl+C pressed. Terminating the process...")
         os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
         popen.wait()
         print("Process terminated.")
     finally:
-        stdout_thread.join()
-        stderr_thread.join()
+        popen.stdout.close()
+        popen.stderr.close()
         popen.wait()
 
 
