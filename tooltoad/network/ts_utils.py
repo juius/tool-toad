@@ -31,7 +31,7 @@ def locate_ts(
         [f"modify_internal {{ B {i[0]} {i[1]} A }} end" for i in interaction_indices]
     )
     active_atoms = " ".join(
-        [item for sublist in interaction_indices for item in sublist]
+        [str(item) for sublist in interaction_indices for item in sublist]
     )
     TS = {"OPTTS": None, "freq": None}
     TS.update(orca_options)
