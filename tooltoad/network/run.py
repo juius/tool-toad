@@ -15,8 +15,9 @@ L2 = {
     "SMD": "water",
 }
 
-NCI_N_CORES = 24
-TS_N_CORES = 24
+NCI_N_CORES = 6
+TS_N_CORES = 6
+MEMORY = 24
 SLURM_PARTITION = "kemi1"
 
 
@@ -75,6 +76,7 @@ def wrap_ts_localization(atoms, coords, charge, interactions, name, n_cores=12):
         interactions,
         orca_options=L2,
         n_cores=n_cores,
+        memory=MEMORY,
         scr=scratch,
     )
     with open(f"{name}-ts.json", "w") as f:
@@ -87,7 +89,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         name="crest",
         cpus_per_task=NCI_N_CORES,
-        slurm_mem_per_cpu=f"{NCI_N_CORES*2}GB",
+        slurm_mem_per_cpu=f"{MEMORY}GB",
         timeout_min=240,
         slurm_partition=SLURM_PARTITION,
     )
@@ -100,7 +102,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         name="ts_search",
         cpus_per_task=TS_N_CORES,
-        slurm_mem_per_cpu=f"{NCI_N_CORES*2}GB",
+        slurm_mem_per_cpu=f"{MEMORY}GB",
         timeout_min=360,
     )
 
