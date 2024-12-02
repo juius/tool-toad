@@ -6,8 +6,10 @@ import shutil
 import signal
 import string
 import subprocess
+import threading
 import warnings
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Generator
 
 import joblib
@@ -20,8 +22,17 @@ STANDARD_PROPERTIES = {"xtb": {"total energy": "electronic_energy"}, "orca": {}}
 def stream(
     cmd: str, cwd: None | Path = None, shell: bool = True
 ) -> Generator[str, None, None]:
-    """Execute a command and stream stdout and stderr concurrently using
-    select."""
+    """Execute a command and stream stdout and stderr concurrently."""
+
+    def enqueue_output(pipe, queue):
+        """Read lines from the pipe and put them into a queue."""
+        try:
+            for line in iter(pipe.readline, ""):
+                queue.put(line)
+        finally:
+            pipe.close()
+
+    # Start the subprocess
     popen = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -31,53 +42,60 @@ def stream(
         cwd=cwd,
         preexec_fn=os.setsid,  # Start a new process group for better control
     )
+    # Queues for stdout and stderr
+    stdout_queue = Queue()
+    stderr_queue = Queue()
 
-    stdout_fd = popen.stdout.fileno()
-    stderr_fd = popen.stderr.fileno()
-
-    # Map file descriptors to their streams
-    fd_to_stream = {stdout_fd: popen.stdout, stderr_fd: popen.stderr}
+    # Threads for reading stdout and stderr
+    stdout_thread = threading.Thread(
+        target=enqueue_output, args=(popen.stdout, stdout_queue)
+    )
+    stderr_thread = threading.Thread(
+        target=enqueue_output, args=(popen.stderr, stderr_queue)
+    )
+    stdout_thread.start()
+    stderr_thread.start()
 
     try:
         while True:
-            # Wait for data on stdout or stderr
-            ready_fds, _, _ = select.select([stdout_fd, stderr_fd], [], [], 0.5)
+            stdout_done = False
+            stderr_done = False
 
-            if not ready_fds and popen.poll() is not None:
-                # No more data and process has exited
+            # Check stdout
+            while not stdout_done:
+                try:
+                    yield stdout_queue.get_nowait()
+                except Empty:
+                    stdout_done = popen.stdout.closed and stdout_queue.empty()
+
+            # Check stderr
+            while not stderr_done:
+                try:
+                    yield stderr_queue.get_nowait()
+                except Empty:
+                    stderr_done = popen.stderr.closed and stderr_queue.empty()
+
+            # Break if the process has finished and both queues are empty
+            if popen.poll() is not None and stdout_done and stderr_done:
                 break
 
-            for fd in ready_fds:
-                if fd not in fd_to_stream:
-                    # Skip if the fd is no longer in the map (stream closed)
-                    continue
-
-                stream = fd_to_stream[fd]
-                line = stream.readline()
-                if line:  # If a line was read, yield it
-                    yield line
-                else:
-                    # Stream is closed, remove it from the map
-                    del fd_to_stream[fd]
-
-            # Break when both streams are closed and the process has exited
-            if popen.poll() is not None and not fd_to_stream:
-                break
     except KeyboardInterrupt:
         print("\nCtrl+C pressed. Terminating the process...")
         os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
         popen.wait()
         print("Process terminated.")
     finally:
-        popen.stdout.close()
-        popen.stderr.close()
+        # Ensure threads are joined and subprocess cleanup
+        stdout_thread.join()
+        stderr_thread.join()
         popen.wait()
 
 
 def check_executable(executable: str):
     """Check if executable is in PATH."""
     results = stream(f"which {executable}")
-    result = list(results)[0]
+    for result in results:
+        break
     if result.startswith("which: no"):
         warnings.warn(f"Executable {executable} not found in PATH")
 
