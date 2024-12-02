@@ -1,6 +1,7 @@
 import contextlib
 import os
 import random
+import select
 import shutil
 import signal
 import string
@@ -41,7 +42,6 @@ def stream(
         cwd=cwd,
         preexec_fn=os.setsid,  # Start a new process group for better control
     )
-
     # Queues for stdout and stderr
     stdout_queue = Queue()
     stderr_queue = Queue()
