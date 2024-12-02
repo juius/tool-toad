@@ -50,7 +50,7 @@ class ScanCoord:
 
     @property
     def orca_atom_ids_str(self):
-        return " ".join([str(idx + 1) for idx in self.atom_ids])
+        return " ".join([str(idx) for idx in self.atom_ids])
 
     @classmethod
     def from_current_position(
