@@ -53,7 +53,7 @@ def wrap_ts_localization(atoms, coords, charge, interactions, name, n_cores=12):
         scr=scratch,
     )
     print(f"Refining PES in {scratch}")
-    pes.refine(orca_options=L2, n_cores=n_cores)
+    pes.refine(orca_options=L2, n_cores=n_cores, scr=scratch)
     point_type = "maxima" if len(interactions) == 1 else "saddle"
     stationary_points = pes.find_stationary_points(
         refined=True, point_type=point_type, min_samples=len(interactions)
@@ -65,7 +65,14 @@ def wrap_ts_localization(atoms, coords, charge, interactions, name, n_cores=12):
             with open(f"{name}-tsguess.xyz", "w") as f:
                 f.write(ac2xyz(atoms, ts_guess_coords))
     print(f"Running pre-optimization for {name} in {scratch}")
-    preopt_results = preoptimize(atoms, ts_guess_coords, charge, interactions)
+    preopt_results = preoptimize(
+        atoms,
+        ts_guess_coords,
+        charge,
+        interactions,
+        orca_options=L2,
+        scr=scratch,
+    )
     with open(f"{name}-preopt.xyz", "w") as f:
         f.write(ac2xyz(atoms, preopt_results["opt_coords"]))
 
