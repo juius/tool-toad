@@ -72,6 +72,8 @@ def wrap_ts_localization(atoms, coords, charge, interactions, name, n_cores=12):
         interactions,
         orca_options=L2,
         scr=scratch,
+        n_cores=n_cores,
+        memory=MEMORY,
     )
     with open(f"{name}-preopt.xyz", "w") as f:
         f.write(ac2xyz(atoms, preopt_results["opt_coords"]))
