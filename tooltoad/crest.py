@@ -111,6 +111,13 @@ def refine_with_orca(
     new_energies -= np.nanmin(new_energies)
     for r, e in zip(crest_out, new_energies):
         r["orca_energy"] = hartree2kcalmol(float(e))
+    if "opt" in options:
+        new_coords = [
+            r["opt_coords"] if r["normal_termination"] else None for r in results
+        ]
+        for r, c in zip(crest_out, new_coords):
+            r["xtb_coords"] = r["coords"]
+            r["coords"] = c
     # sort by orca energy
     crest_out.sort(key=lambda x: x["orca_energy"])
     return crest_out
