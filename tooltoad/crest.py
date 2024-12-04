@@ -89,8 +89,7 @@ def refine_with_orca(
     options={},
     target="electronic_energy",
     n_cores=1,
-    orca_cmd="orca",
-    set_env="",
+    **orca_kwargs,
 ):
     atoms = crest_out[0]["atoms"]
     all_coords = [r["coords"] for r in crest_out]
@@ -102,8 +101,7 @@ def refine_with_orca(
                 charge=charge,
                 multiplicity=multiplicity,
                 options=options,
-                orca_cmd=orca_cmd,
-                set_env=set_env,
+                **orca_kwargs,
             )
             for coords in all_coords
         )
