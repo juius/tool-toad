@@ -1,15 +1,12 @@
 import contextlib
 import os
 import random
-import select
 import shutil
 import signal
 import string
 import subprocess
-import threading
 import warnings
 from pathlib import Path
-from queue import Empty, Queue
 from typing import Generator
 
 import joblib
@@ -23,79 +20,36 @@ def stream(
     cmd: str, cwd: None | Path = None, shell: bool = True
 ) -> Generator[str, None, None]:
     """Execute a command and stream stdout and stderr concurrently."""
-
-    def enqueue_output(pipe, queue):
-        """Read lines from the pipe and put them into a queue."""
-        try:
-            for line in iter(pipe.readline, ""):
-                queue.put(line)
-        finally:
-            pipe.close()
-
-    # Start the subprocess
-    popen = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        universal_newlines=True,
+        text=True,  # Use text mode for string-based reading
         shell=shell,
         cwd=cwd,
         preexec_fn=os.setsid,  # Start a new process group for better control
-    )
-    # Queues for stdout and stderr
-    stdout_queue = Queue()
-    stderr_queue = Queue()
-
-    # Threads for reading stdout and stderr
-    stdout_thread = threading.Thread(
-        target=enqueue_output, args=(popen.stdout, stdout_queue)
-    )
-    stderr_thread = threading.Thread(
-        target=enqueue_output, args=(popen.stderr, stderr_queue)
-    )
-    stdout_thread.start()
-    stderr_thread.start()
-
-    try:
-        while True:
-            stdout_done = False
-            stderr_done = False
-
-            # Check stdout
-            while not stdout_done:
-                try:
-                    yield stdout_queue.get_nowait()
-                except Empty:
-                    stdout_done = popen.stdout.closed and stdout_queue.empty()
-
-            # Check stderr
-            while not stderr_done:
-                try:
-                    yield stderr_queue.get_nowait()
-                except Empty:
-                    stderr_done = popen.stderr.closed and stderr_queue.empty()
-
-            # Break if the process has finished and both queues are empty
-            if popen.poll() is not None and stdout_done and stderr_done:
-                break
-
-    except KeyboardInterrupt:
-        print("\nCtrl+C pressed. Terminating the process...")
-        os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
-        popen.wait()
-        print("Process terminated.")
-    finally:
-        # Ensure threads are joined and subprocess cleanup
-        stdout_thread.join()
-        stderr_thread.join()
-        popen.wait()
+        bufsize=1,  # Line-buffered output for immediate feedback
+    ) as process:
+        try:
+            for line in iter(process.stdout.readline, ""):
+                yield line.strip()
+            for line in iter(process.stderr.readline, ""):
+                yield line.strip()
+        except KeyboardInterrupt:
+            print("\nCtrl+C pressed. Terminating the process...")
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            process.wait()
+            print("Process terminated.")
+        finally:
+            process.stdout.close()
+            process.stderr.close()
+            process.wait()
 
 
 def check_executable(executable: str):
     """Check if executable is in PATH."""
     results = stream(f"which {executable}")
-    for result in results:
-        break
+    result = next(results)
     if result.startswith("which: no"):
         warnings.warn(f"Executable {executable} not found in PATH")
 
