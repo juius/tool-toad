@@ -104,7 +104,8 @@ def orca_calculate(
         if any(p in clean_option_keys for p in ("freq", "numfreq")):
             properties.append("vibs")
             properties.append("gibbs_energy")
-            properties.append("detailed_contributions")
+            if not any(p in clean_option_keys for p in ("xtb1", "xtb2")):
+                properties.append("detailed_contributions")
         # ---------- results from additional files --------------
         if "irc" in clean_option_keys:
             additional_properties.append("irc")
@@ -295,10 +296,19 @@ def read_hirshfeld_charges(lines: List[str]) -> list:
     return hirshfeld_charges
 
 
-def read_vibrations(lines: List[str]) -> list:
+def get_n_atoms(lines: List[str]) -> int:
     for i, line in enumerate(lines):
-        if "Number of atoms" in line:
-            n_atoms = int(line.split()[-1])
+        if "> *xyz" in line:
+            start_idx = i
+        elif "> *" in line:
+            end_idx = i
+            break
+    return end_idx - start_idx - 1
+
+
+def read_vibrations(lines: List[str]) -> list:
+    n_atoms = get_n_atoms(lines)
+    for i, line in enumerate(lines):
         if "VIBRATIONAL FREQUENCIES" in line:
             freq_start_idx = i
         if "NORMAL MODES" in line:
