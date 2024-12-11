@@ -256,7 +256,7 @@ class PotentialEnergySurface:
             constrain_points = np.array([[]])
         input_strings = []
         for constains in constrain_points:
-            input_str = f"%geom\n  MaxIter {max_cycle}\n  Scan\n"
+            input_str = f"%geom\n  MaxIter {max_cycle}\n  Convergence loose \n  Scan\n"
             input_str += f"    {scan_coord.orca_ctype} {scan_coord.orca_atom_ids_str} = {scan_coord.start:.06f}, {scan_coord.end:.06f}, {scan_coord.nsteps}\n"
             input_str += "  end\n"
             for i, c in enumerate(constains):
@@ -289,8 +289,11 @@ class PotentialEnergySurface:
         self.scan_value_tensor, detailed_strings = self._construct_orca_scan(
             self.scan_coords, max_cycle=max_cycle
         )
+        n_scans = len(detailed_strings)
+        n_parallel = min(n_cores, n_scans)
+        n_per_scan = n_cores // n_parallel
         with tqdm_joblib(tqdm(desc="1-dimensional scans", total=len(detailed_strings))):
-            results = Parallel(n_jobs=n_cores, prefer="threads")(
+            results = Parallel(n_jobs=n_parallel, prefer="threads")(
                 delayed(orca_calculate)(
                     atoms=self.atoms,
                     coords=self.coords,
@@ -300,6 +303,7 @@ class PotentialEnergySurface:
                     xtra_inp_str=s,
                     force=True,
                     scr=scr,
+                    n_cores=n_per_scan,
                 )
                 for i, s in enumerate(detailed_strings)
             )
