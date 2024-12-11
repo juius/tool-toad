@@ -99,7 +99,9 @@ def orca_calculate(
             properties.append("cosmors_dgsolv")
         if "hirshfeld" in clean_option_keys:
             properties.append("hirshfeld_charges")
-        if any(p in clean_option_keys for p in ("opt", "optts")):
+        if any(
+            p in clean_option_keys for p in ("opt", "optts", "tightopt", "verytightopt")
+        ):
             properties.append("opt_structure")
         if any(p in clean_option_keys for p in ("freq", "numfreq")):
             properties.append("vibs")
