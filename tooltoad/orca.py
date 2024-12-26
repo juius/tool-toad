@@ -6,7 +6,7 @@ from typing import List
 import numpy as np
 from dotenv import load_dotenv
 
-from tooltoad.chemutils import xyz2ac
+from tooltoad.chemutils import hartree2kcalmol, read_multi_xyz, xyz2ac
 from tooltoad.utils import WorkingDir, check_executable, stream
 
 _logger = logging.getLogger("orca")
@@ -111,6 +111,11 @@ def orca_calculate(
         # ---------- results from additional files --------------
         if "irc" in clean_option_keys:
             additional_properties.append("irc")
+        if "goat" in clean_option_keys:
+            additional_properties.append("goat")
+        if "goat-react" in clean_option_keys:
+            additional_properties.append("goat")
+            additional_properties.append("goat-react")
         # ---------- check for options in xtra_inp_str ----------
         if xtra_inp_str:
             if "scan" in xtra_inp_str.lower():
@@ -453,12 +458,58 @@ def read_scan(lines: List[str], work_dir: WorkingDir) -> dict:
     return scan_results
 
 
+def read_goat(lines: List[str], work_dir: WorkingDir) -> dict:
+    atoms, coords, energies = read_multi_xyz(
+        work_dir / "input.finalensemble.xyz", lambda line: float(line.split()[0])
+    )
+    # sort the ensemble by energy
+    coords, energies = zip(*sorted(zip(coords, energies), key=lambda x: x[1]))
+    # add relative energies in kcal/mol
+    relative_energies = [0.0] + [hartree2kcalmol(e - energies[0]) for e in energies[1:]]
+    ensemble = {
+        "atoms": atoms[0],
+        "coords": coords,
+        "energies": energies,
+        "relative_energies": relative_energies,
+    }
+    with open(work_dir / "input.globalminimum.xyz", "r") as f:
+        text = f.read()
+    a, c = xyz2ac(text)
+
+    return {
+        "atoms": a,
+        "coords": c,
+        "energy": float(text.splitlines()[1].strip()),
+        "ensemble": ensemble,
+    }
+
+
+def read_goat_react(lines: List[str], work_dir: WorkingDir) -> dict:
+    atoms, coords, energies = read_multi_xyz(
+        work_dir / "input.products.unique.xyz", lambda line: float(line.split()[1])
+    )
+    # sort the ensemble by energy
+    coords, energies = zip(*sorted(zip(coords, energies), key=lambda x: x[1]))
+    # add relative energies in kcal/mol
+    relative_energies = [0.0] + [hartree2kcalmol(e - energies[0]) for e in energies[1:]]
+    unique_products = {
+        "atoms": atoms,
+        "coords": coords,
+        "energies": energies,
+        "relative_energies": relative_energies,
+    }
+
+    return {"unique_products": unique_products}
+
+
 def get_additional_results(
     lines: List[str], work_dir: WorkingDir, properties: list
 ) -> dict:
     reader = {
         "irc": read_irc,
         "scan": read_scan,
+        "goat": read_goat,
+        "goat-react": read_goat_react,
     }
     additional_results = {"normal_termination": True}
     for property in properties:
