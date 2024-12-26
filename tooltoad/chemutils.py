@@ -18,6 +18,7 @@ from rdkit.Chem import (
     rdMolDescriptors,
 )
 from rdkit.ML.Cluster import Butina
+from sklearn.cluster import DBSCAN
 
 from tooltoad.utils import stream
 
@@ -39,6 +40,73 @@ VDW_RADII = {
     "S": 1.8,
     # Add more as needed
 }
+
+
+class EnsembleCluster:
+    def __init__(
+        self,
+        atoms: list[str],
+        ensemble_coords: list[list[list[int]]],
+        energies: list[float] | None,
+    ):
+        self.atoms = atoms
+        self.ensemble_coords = np.asarray(ensemble_coords)
+        self.n_conformers = len(ensemble_coords)
+        self.energies = np.asarray(energies)
+
+        mols = [ac2mol(atoms, c) for c in self.ensemble_coords]
+        smis = [Chem.MolToSmiles(mol) for mol in mols]
+        if len(set(smis)) > 1:
+            raise ValueError("Change in connectivity in ensemble")
+            # TODO: deal with that
+        mol = mols[0]
+        # add conformers to mol
+        for c in mols[1:]:
+            mol.AddConformer(c.GetConformer(), assignId=True)
+        self.mol = mol
+
+    @classmethod
+    def from_goat(cls, goat_results: dict):
+        assert (
+            "goat" in goat_results
+        ), f"No GOAT results found: {list(goat_results.keys())}"
+        return cls(
+            atoms=goat_results["goat"]["ensemble"]["atoms"],
+            ensemble_coords=goat_results["goat"]["ensemble"]["coords"],
+            energies=goat_results["goat"]["ensemble"]["energies"],
+        )
+
+    def __call__(self, eps: float = 1.0, min_samples: int = 1):
+        self._calc_rmsd_matrix()
+        self._cluster_conformers()
+        if self.energies is not None:
+            return self._select_best_conformers(eps=eps, min_samples=min_samples)
+        else:
+            print("No energies provided, returning labels only")
+            return self.labels
+
+    def _calc_rmsd_matrix(self):
+        rmsds = np.zeros((self.n_conformers, self.n_conformers))
+        rmsds[np.tril_indices(self.n_conformers, k=-1)] = np.asarray(
+            Chem.rdMolAlign.GetAllConformerBestRMS(self.mol, numThreads=-1)
+        )
+        rmsds += rmsds.T
+        self.rmsd_matrix = rmsds
+
+    def _cluster_conformers(self, eps: float = 1.0, min_samples: int = 1):
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+        self.labels = dbscan.fit_predict(self.rmsd_matrix)
+
+    def _select_best_conformers(self):
+        # Find the structure with the lowest energy in each cluster
+        clustered_structures = []
+        for cluster_label in set(self.labels):
+            if cluster_label == -1:  # Skip noise points (-1)
+                continue
+            cluster_indices = np.where(self.labels == cluster_label)[0]
+            best_point_idx = cluster_indices[np.argmin(self.energies[cluster_indices])]
+            clustered_structures.append(self.ensemble_coords[best_point_idx])
+        return clustered_structures
 
 
 class SymmetryMapper:
@@ -129,6 +197,36 @@ class SymmetryMapper:
 def hartree2kcalmol(hartree: float) -> float:
     """Converts Hartree to kcal/mol."""
     return hartree * 627.509474
+
+
+def read_multi_xyz(
+    xyz_traj_file: str, extract_property_function: None | (str) = None, n_skip: int = 0
+) -> tuple:
+    """Reads a multi-frame XYZ trajectory file and returns a list of
+    coordinates and optionally properties."""
+    with open(xyz_traj_file, "r") as f:
+        lines = f.readlines()
+
+    n_atoms = int(lines[0])
+    frame_size = n_atoms + 2 + n_skip  # Atoms + comment + atom count line
+    n_frames = len(lines) // frame_size
+
+    atoms = []
+    coords = []
+    property = []
+    for i in range(n_frames):
+        start = i * frame_size + 2  # Skip atom count and metadata lines
+        if extract_property_function:
+            property.append(extract_property_function(lines[start - 1]))
+        frame_coords = [
+            list(map(float, line.split()[1:]))
+            for line in lines[start : start + n_atoms]
+        ]
+        coords.append(frame_coords)
+        atoms.append([line.split()[0] for line in lines[start : start + n_atoms]])
+    if extract_property_function:
+        return atoms, coords, property
+    return atoms, coords
 
 
 def get_num_confs(mol: Chem.Mol, conf_rule: str = "3x+3,max10") -> int:
