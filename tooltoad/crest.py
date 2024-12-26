@@ -21,6 +21,7 @@ def run_crest(
     calc_dir: None | str = None,
     scr: str = ".",
     keep_files: bool = False,
+    bond_constraints: None | list[tuple[int]] = None,
     **crest_kwargs,
 ):
     crest_kwargs.setdefault("noreftopo", None)
@@ -43,6 +44,15 @@ def run_crest(
             cmd += f"--{key} "
         else:
             cmd += f"--{key} {str(value)} "
+    # setup constraints
+    if bond_constraints:
+        _logger.info("Setting up constraints..")
+        constaint_str = format_constaints(bond_pair_ids=bond_constraints)
+        _logger.debug(constaint_str)
+        with open(wd / "detailed.inp", "w") as f:
+            f.write(constaint_str)
+        cmd += "--cinp detailed.inp "
+
     cmd += " | tee crest.log"
     _logger.info(f"Running CREST with command: {cmd}")
     os.environ["OMP_NUM_THREADS"] = "1"
@@ -119,3 +129,18 @@ def refine_with_orca(
     # sort by orca energy
     crest_out.sort(key=lambda x: x["orca_energy"])
     return crest_out
+
+
+def format_constaints(
+    atom_ids: list[int] | None = None, bond_pair_ids: list[tuple[int]] | None = None
+):
+    cstr = "$constrain\n  force constant=0.25 \n"
+    if atom_ids:
+        raise NotImplementedError
+    for pair in bond_pair_ids:
+        cstr += f"  distance: {int(pair[0])} {int(pair[1])} auto \n"
+    cstr += "$end"
+    return cstr
+
+
+# unified constraints interface in chemutils
