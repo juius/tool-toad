@@ -97,6 +97,7 @@ def get_ts_active_bonds(coords, mode, distance_cutoff=2.75, projection_threshold
 
 
 def check_ts(coords, mode, interaction_ids):
+    interaction_ids = set(frozenset(x) for x in interaction_ids)
     pairs, _ = get_ts_active_bonds(coords, mode)
     significant_pairs = {frozenset(pair) for pair in pairs}
     overlap = interaction_ids & significant_pairs
