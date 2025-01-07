@@ -78,9 +78,9 @@ class EnsembleCluster:
 
     def __call__(self, eps: float = 1.0, min_samples: int = 1):
         self._calc_rmsd_matrix()
-        self._cluster_conformers()
+        self._cluster_conformers(eps=eps, min_samples=min_samples)
         if self.energies is not None:
-            return self._select_best_conformers(eps=eps, min_samples=min_samples)
+            return self._select_best_conformers()
         else:
             print("No energies provided, returning labels only")
             return self.labels
