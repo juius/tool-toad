@@ -1,5 +1,6 @@
 import itertools
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -9,11 +10,26 @@ from tooltoad.chemutils import EnsembleCluster, ac2xyz
 from tooltoad.ndscan import PotentialEnergySurface, ScanCoord
 from tooltoad.network import Universe
 from tooltoad.network.ts_utils import (
+    check_ts,
     get_ts_active_bonds,
     locate_ts,
     preoptimize,
 )
 from tooltoad.orca import orca_calculate
+
+LOGGING_SETTINGS = {
+    "level": logging.INFO,
+    "handler": logging.StreamHandler(),
+}
+
+orca_logger = logging.getLogger("orca")
+chemutils_logger = logging.getLogger("chemutils")
+universe_logger = logging.getLogger("universe")
+ndscan_logger = logging.getLogger("ndscan")
+
+for logger in [orca_logger, chemutils_logger, universe_logger, ndscan_logger]:
+    logger.setLevel(LOGGING_SETTINGS["level"])
+    logger.addHandler(LOGGING_SETTINGS["handler"])
 
 
 def save_results(results: dict, file_path: str | Path) -> str:
@@ -111,13 +127,25 @@ def wrap_ts_localization(
     )
     with open(f"{name}-ts.json", "w") as f:
         json.dump(ts_results, f)
+    # check if TS search was successful
+    if not ts_results["normal_termination"]:
+        print(f"TS search failed, see {name}-ts.json for details")
+        return ts_results
+    if not check_ts(
+        ts_results["opt_coords"], ts_results["vibs"][0]["mode"], interactions
+    )[0]:
+        print(f"TS search didn't yield the expected TS, see {name}-ts.json for details")
+        return ts_results
     ts_conf_search_results = wrap_ts_conf_search(
         atoms=ts_results["atoms"],
         coords=ts_results["opt_coords"],
         charge=charge,
+        multiplicity=1,
+        name=name,
         # multiplicity=ts_results["multiplicity"],
         ts_mode=ts_results["vibs"][0]["mode"],
         n_cores=n_cores,
+        memory=MEMORY,
         scr=scratch,
     )
     with open(f"{name}-ts_conf.json", "w") as f:
@@ -127,21 +155,45 @@ def wrap_ts_localization(
             for i in range(len(ts_conf_search_results))
         }
         json.dump(tmp, f)
+
     return ts_conf_search_results
 
 
 def wrap_ts_conf_search(
-    atoms,
-    coords,
-    charge,
-    multiplicity,
-    ts_mode,
-    distance_cutoff=2.75,
+    atoms: list[str],
+    coords: list[list[float]],
+    charge: int,
+    multiplicity: int,
+    ts_mode: list[list[float]],
+    name: str,
+    distance_cutoff: float = 2.75,
     n_cores: int = 8,
+    memory: int = 24,
     goat_options: dict = {"xtb2": None, "alpb": "water", "goat": None},
     orca_options: dict = {"r2scan-3c": None, "smd": "water"},
     scr: str = ".",
 ):
+    """Run GOAT conformer search in ORCA with `goat_options`. Bonds
+    that are active in the `ts_mode` are constrained. Obtained conformers
+    are clustered and re-ranked based on calculations with `orca_options`.
+
+    Args:
+        atoms (list[str]): _description_
+        coords (list[list[float]]): _description_
+        charge (int): _description_
+        multiplicity (int): _description_
+        ts_mode (list[list[float]]): _description_
+        distance_cutoff (float, optional): _description_. Defaults to 2.75.
+        n_cores (int, optional): _description_. Defaults to 8.
+        memory (int, optional): _description_. Defaults to 24.
+        goat_options (_type_, optional): _description_. Defaults to {"xtb2": None, "alpb": "water", "goat": None}.
+        orca_options (_type_, optional): _description_. Defaults to {"r2scan-3c": None, "smd": "water"}.
+        scr (str, optional): _description_. Defaults to ".".
+
+    Returns:
+        _type_: _description_
+    """
+
     if isinstance(scr, str):
         scr = Path(scr)
         if not scr.exists():
@@ -166,6 +218,7 @@ def wrap_ts_conf_search(
         multiplicity=multiplicity,
         xtra_inp_str=format_orca_constraints(active_pairs),
         n_cores=n_cores,
+        memory=memory,
         options=goat_options,
     )
     print("Clustering GOAT results")
@@ -173,26 +226,29 @@ def wrap_ts_conf_search(
     clustered_coords = ec()
     res = []
     for cluster_idx, coords in enumerate(clustered_coords):
+        # TODO: skip the cluster that contains the original TS
         print(f"Preoptimize for cluster {cluster_idx}")
         preopt = preoptimize(
             atoms,
             coords,
-            charge=0,
-            interactions=active_pairs[0],
+            charge=charge,
+            interactions=active_pairs,
             orca_options=orca_options,
-            n_cores=8,
+            n_cores=n_cores,
+            memory=memory,
         )
-        save_results(preopt, scr / f"preopt-cluster-{cluster_idx}.json")
+        save_results(preopt, scr / f"{name}-preopt-cluster-{cluster_idx}.json")
         print(f"TS search for cluster {cluster_idx}")
         result = locate_ts(
             atoms,
             preopt["opt_coords"],
-            interaction_indices=active_pairs[0],
+            interaction_indices=active_pairs,
             orca_options=orca_options,
-            n_cores=8,
+            n_cores=n_cores,
+            memory=memory,
         )
         res.append(result)
-        save_results(result, scr / f"ts-cluster-{cluster_idx}.json")
+        save_results(result, scr / f"{name}-ts-cluster-{cluster_idx}.json")
     print("Done with TS conf search")
     return res
 
