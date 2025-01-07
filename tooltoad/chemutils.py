@@ -82,12 +82,16 @@ class EnsembleCluster:
     ):
         self._calc_rmsd_matrix()
         self._cluster_conformers(eps=eps, min_samples=min_samples)
+        logger.info(f"Found {len(set(self.labels))} clusters")
         if not enantio_selective:
             self._join_enantio_clusters()
+            logger.info(
+                f"Retained {len(set(self.labels))} clusters after joining enantiomer clusters"
+            )
         if self.energies is not None:
             return self._select_best_conformers()
         else:
-            print("No energies provided, returning labels only")
+            logger.warning("No energies provided, returning labels only")
             return self.labels
 
     def _join_enantio_clusters(self):
