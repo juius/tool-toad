@@ -45,8 +45,9 @@ L2 = {
 }
 
 NCI_N_CORES = 8
-TS_N_CORES = 8
-MEMORY = 24
+TS_N_CORES = 24
+NCI_MEMORY = 16
+TS_MEMORY = 48
 SLURM_PARTITION = "kemi1"
 
 
@@ -101,6 +102,12 @@ def wrap_ts_localization(
             ts_guess_coords = pes.traj_tensor[sp["idx"]]
             with open(f"{name}-tsguess.xyz", "w") as f:
                 f.write(ac2xyz(atoms, ts_guess_coords))
+    else:
+        return {
+            "log": "No stationary points found",
+            "traj_tensor": pes.traj_tensor.tolist(),
+            "pes_tensor": pes.pes_tensor.tolist(),
+        }
     print(f"Running pre-optimization for {name} in {scratch}")
     preopt_results = preoptimize(
         atoms,
@@ -110,7 +117,7 @@ def wrap_ts_localization(
         orca_options=L2,
         scr=scratch,
         n_cores=n_cores,
-        memory=MEMORY,
+        memory=TS_MEMORY,
     )
     with open(f"{name}-preopt.xyz", "w") as f:
         f.write(ac2xyz(atoms, preopt_results["opt_coords"]))
@@ -122,7 +129,7 @@ def wrap_ts_localization(
         interactions,
         orca_options=L2,
         n_cores=n_cores,
-        memory=MEMORY,
+        memory=TS_MEMORY,
         scr=scratch,
     )
     with open(f"{name}-ts.json", "w") as f:
@@ -145,7 +152,7 @@ def wrap_ts_localization(
         # multiplicity=ts_results["multiplicity"],
         ts_mode=ts_results["vibs"][0]["mode"],
         n_cores=n_cores,
-        memory=MEMORY,
+        memory=TS_MEMORY,
         scr=scratch,
     )
     with open(f"{name}-ts_conf.json", "w") as f:
@@ -220,6 +227,7 @@ def wrap_ts_conf_search(
         n_cores=n_cores,
         memory=memory,
         options=goat_options,
+        scr=scr,
     )
     print("Clustering GOAT results")
     ec = EnsembleCluster.from_goat(goat)
@@ -236,6 +244,7 @@ def wrap_ts_conf_search(
             orca_options=orca_options,
             n_cores=n_cores,
             memory=memory,
+            scr=scr,
         )
         save_results(preopt, scr / f"{name}-preopt-cluster-{cluster_idx}.json")
         print(f"TS search for cluster {cluster_idx}")
@@ -246,6 +255,7 @@ def wrap_ts_conf_search(
             orca_options=orca_options,
             n_cores=n_cores,
             memory=memory,
+            scr=scr,
         )
         res.append(result)
         save_results(result, scr / f"{name}-ts-cluster-{cluster_idx}.json")
@@ -258,7 +268,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         name="crest",
         cpus_per_task=NCI_N_CORES,
-        slurm_mem_per_cpu=f"{MEMORY}GB",
+        mem_gb=f"{NCI_MEMORY}GB",
         timeout_min=240,
         slurm_partition=SLURM_PARTITION,
     )
@@ -271,7 +281,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         name="ts_search",
         cpus_per_task=TS_N_CORES,
-        slurm_mem_per_cpu=f"{MEMORY}GB",
+        mem_gb=f"{TS_MEMORY}GB",
         timeout_min=360,
     )
 
