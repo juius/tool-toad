@@ -127,7 +127,7 @@ def orca_calculate(
         results.update(additional_results)
     else:
         _logger.warning("Orca calculation did not terminate normally.")
-        _logger.info("".join(lines))
+        _logger.info("\n".join(lines))
         results = {"normal_termination": False, "log": "".join(lines)}
     if calc_dir:
         results["calc_dir"] = str(work_dir)
