@@ -1,3 +1,4 @@
+import itertools
 import json
 import logging
 import os
@@ -46,13 +47,13 @@ class EnsembleCluster:
     def __init__(
         self,
         atoms: list[str],
-        ensemble_coords: list[list[list[int]]],
-        energies: list[float] | None,
+        ensemble_coords: list[list[list[float]]],
+        energies: list[float] | None = None,
     ):
         self.atoms = atoms
         self.ensemble_coords = np.asarray(ensemble_coords)
         self.n_conformers = len(ensemble_coords)
-        self.energies = np.asarray(energies)
+        self.energies = np.asarray(energies) if energies else None
 
         mols = [ac2mol(atoms, c) for c in self.ensemble_coords]
         smis = [Chem.MolToSmiles(mol) for mol in mols]
@@ -76,14 +77,52 @@ class EnsembleCluster:
             energies=goat_results["goat"]["ensemble"]["energies"],
         )
 
-    def __call__(self, eps: float = 1.0, min_samples: int = 1):
+    def __call__(
+        self, eps: float = 1.0, min_samples: int = 1, enantio_selective: bool = False
+    ):
         self._calc_rmsd_matrix()
         self._cluster_conformers(eps=eps, min_samples=min_samples)
+        if not enantio_selective:
+            self._join_enantio_clusters()
         if self.energies is not None:
             return self._select_best_conformers()
         else:
             print("No energies provided, returning labels only")
             return self.labels
+
+    def _join_enantio_clusters(self):
+        def _pairs2groups(pairs):
+            G = nx.Graph()
+            G.add_edges_from(pairs)
+            groups = list(nx.connected_components(G))
+
+            return groups
+
+        def pairwise_distance(coords):
+            return np.sqrt(
+                np.sum(
+                    (coords[:, np.newaxis, :] - coords[np.newaxis, :, :]) ** 2,
+                    axis=-1,
+                )
+            )
+
+        pairs = []
+        sm = SymmetryMapper(self.mol)
+        equivalent_atoms = sm.equivalence_map.values()
+        for i, j in itertools.combinations(range(self.rmsd_matrix.shape[0]), 2):
+            di = pairwise_distance(self.ensemble_coords[i])
+            dj = pairwise_distance(self.ensemble_coords[j])
+            for atoms in equivalent_atoms:
+                di[atoms] = di[atoms].mean(axis=0)
+                di[:, atoms] = di[:, atoms].mean(axis=1)[:, np.newaxis]
+                dj[atoms] = dj[atoms].mean(axis=0)
+                dj[:, atoms] = dj[:, atoms].mean(axis=1)[:, np.newaxis]
+            if np.allclose(di, dj, atol=0.2):
+                pairs.append(set([i, j]))
+
+        enantio_groups = _pairs2groups(pairs)
+        for g in enantio_groups:
+            self.labels[list(g)] = max(self.labels) + 1
 
     def _calc_rmsd_matrix(self):
         rmsds = np.zeros((self.n_conformers, self.n_conformers))
@@ -137,13 +176,12 @@ class SymmetryMapper:
             ranks = Chem.CanonicalRankAtoms(res_mol, breakTies=False)
             rank_matrix[i] = ranks
 
-        # Calculate the average rank for each atom across resonance forms
-        average_ranks = np.mean(rank_matrix, axis=0)
+        new_ranks = np.sum(rank_matrix, axis=0)
 
-        # Create an equivalence map based on average ranks
+        # Create an equivalence map based on new ranks
         equivalence_map = {}
-        for idx, avg_rank in enumerate(average_ranks):
-            rank = int(avg_rank)  # Use integer representation for mapping
+        for idx, rank in enumerate(new_ranks):
+            rank = int(rank)  # Use integer representation for mapping
             if rank not in equivalence_map:
                 equivalence_map[rank] = []
             equivalence_map[rank].append(idx)
