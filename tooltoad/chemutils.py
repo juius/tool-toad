@@ -173,12 +173,17 @@ class SymmetryMapper:
         """
         # Initialize an array to hold rank counts for each atom across all resonance structures
         atom_count = len(self.mol.GetAtoms())
-        rank_matrix = np.zeros((len(self.resonance_structures), atom_count), dtype=int)
+        rank_matrix = np.zeros(
+            (max(len(self.resonance_structures), 1), atom_count), dtype=int
+        )
 
-        # Get ranks for each resonance structure and store them in the matrix
-        for i, res_mol in enumerate(self.resonance_structures):
-            ranks = Chem.CanonicalRankAtoms(res_mol, breakTies=False)
-            rank_matrix[i] = ranks
+        if len(Chem.DetectChemistryProblems(self.mol)) == 0:
+            # Get ranks for each resonance structure and store them in the matrix
+            for i, res_mol in enumerate(self.resonance_structures):
+                ranks = Chem.CanonicalRankAtoms(res_mol, breakTies=False)
+                rank_matrix[i] = ranks
+        else:
+            rank_matrix[0] = Chem.CanonicalRankAtoms(self.mol, breakTies=False)
 
         new_ranks = np.sum(rank_matrix, axis=0)
 
