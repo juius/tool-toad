@@ -269,7 +269,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         name="crest",
         cpus_per_task=NCI_N_CORES,
-        mem_gb=f"{NCI_MEMORY}GB",
+        mem_gb=NCI_MEMORY,
         timeout_min=240,
         slurm_partition=SLURM_PARTITION,
     )
@@ -282,7 +282,7 @@ if __name__ == "__main__":
     executor.update_parameters(
         name="ts_search",
         cpus_per_task=TS_N_CORES,
-        mem_gb=f"{TS_MEMORY}GB",
+        mem_gb=TS_MEMORY,
         timeout_min=360,
     )
 
