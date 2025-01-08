@@ -229,6 +229,7 @@ def wrap_ts_conf_search(
         options=goat_options,
         scr=scr,
     )
+    save_results(goat, scr / f"{name}-goat.json")
     print("Clustering GOAT results")
     ec = EnsembleCluster.from_goat(goat)
     clustered_coords = ec()
