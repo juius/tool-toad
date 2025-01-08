@@ -229,7 +229,7 @@ def wrap_ts_conf_search(
         options=goat_options,
         scr=scr,
     )
-    save_results(goat, scr / f"{name}-goat.json")
+    save_results(goat, f"{name}-goat.json")
     print("Clustering GOAT results")
     ec = EnsembleCluster.from_goat(goat)
     clustered_coords = ec()
@@ -247,7 +247,7 @@ def wrap_ts_conf_search(
             memory=memory,
             scr=scr,
         )
-        save_results(preopt, scr / f"{name}-preopt-cluster-{cluster_idx}.json")
+        save_results(preopt, f"{name}-preopt-cluster-{cluster_idx}.json")
         print(f"TS search for cluster {cluster_idx}")
         result = locate_ts(
             atoms,
@@ -259,7 +259,7 @@ def wrap_ts_conf_search(
             scr=scr,
         )
         res.append(result)
-        save_results(result, scr / f"{name}-ts-cluster-{cluster_idx}.json")
+        save_results(result, f"{name}-ts-cluster-{cluster_idx}.json")
     print("Done with TS conf search")
     return res
 
