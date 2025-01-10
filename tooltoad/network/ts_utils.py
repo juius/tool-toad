@@ -56,7 +56,13 @@ def locate_ts(
     return ts_results
 
 
-def run_irc(atoms, coords, interaction_indices, orca_options={"XTB2": None}, **kwargs):
+def run_irc(
+    atoms,
+    coords,
+    orca_options={"XTB2": None},
+    max_iter=100,
+    **kwargs,
+):
     IRC = {"IRC": None}
     IRC.update(orca_options)
     irc_results = orca_calculate(
@@ -64,8 +70,8 @@ def run_irc(atoms, coords, interaction_indices, orca_options={"XTB2": None}, **k
         coords,
         options=IRC,
         calc_dir="ts_irc",
-        xtra_inp_str="""%irc
-    MaxIter    100
+        xtra_inp_str=f"""%irc
+    MaxIter    {max_iter}
     InitHess calc_anfreq
     end
     """,
