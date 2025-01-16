@@ -83,7 +83,6 @@ def run_irc(
 ):
     IRC = {
         "IRC": None,
-        "anfreq": None,
     }  # potentially a bug, need to calc analytical hessian before IRC and read in
     IRC.update(orca_options)
     irc_results = orca_calculate(
@@ -92,8 +91,6 @@ def run_irc(
         options=IRC,
         xtra_inp_str=f"""%irc
     MaxIter    {max_iter}
-    InitHess   read
-    Hess_Filename "input.hess"
     end
     """,
         **kwargs,
