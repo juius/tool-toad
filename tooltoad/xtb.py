@@ -147,16 +147,16 @@ def write_xyz(atoms: list[str], coords: list[list], scr: Path) -> Path:
 
 
 def write_detailed_input(details_dict: dict, scr: Path) -> Path:
-    """Write detailed input file for xTB calculation."""
     detailed_input_str = ""
     for key, value in details_dict.items():
         detailed_input_str += f"${key}\n"
         for subkey, subvalue in value.items():
-            detailed_input_str += (
-                f' {subkey}: {", ".join([str(i) for i in subvalue])}\n'
-            )
+            if subkey.lower() == "constraints":
+                for constraint in subvalue:
+                    detailed_input_str += f"{constraint.xtb}\n"
+            else:
+                detailed_input_str += f"{subkey}: {subvalue}\n"
     detailed_input_str += "$end\n"
-
     fpath = scr / "details.inp"
     _logger.debug(f"Writing detailed input to {fpath}")
     _logger.debug(detailed_input_str)

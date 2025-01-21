@@ -43,6 +43,62 @@ VDW_RADII = {
 }
 
 
+class Constraint:
+    def __init__(self, ids: list[int], value: float):
+        self.ids = ids
+        self.value = value
+        assert all(isinstance(i, int) for i in ids)
+
+    def __repr__(self):
+        return f"{self.xtb_type.capitalize()} Constraint at {self.xtb_value} for ({','.join([str(x) for x in self.ids])})"
+
+    @property
+    def xtb_type(self):
+        if len(self.ids) == 2:
+            return "distance"
+        elif len(self.ids) == 3:
+            return "angle"
+        elif len(self.ids) == 4:
+            return "dihedral"
+        else:
+            raise ValueError
+
+    @property
+    def xtb_ids(self):
+        return [i + 1 for i in self.ids]
+
+    @property
+    def xtb_value(self):
+        return self.value if self.value else "auto"
+
+    @property
+    def xtb(self):
+        return f"{self.xtb_type}: {', '.join([str(x) for x in self.xtb_ids])}, {self.xtb_value}"
+
+    @property
+    def orca_type(self):
+        if len(self.ids) == 2:
+            return "B"
+        elif len(self.ids) == 3:
+            return "A"
+        elif len(self.ids) == 4:
+            return "D"
+        else:
+            raise ValueError
+
+    @property
+    def orca_ids(self):
+        return self.ids
+
+    @property
+    def orca_value(self):
+        return self.value if self.value else ""
+
+    @property
+    def orca(self):
+        return f"{{ {self.orca_type} {' '.join([str(x) for x in self.orca_ids])} {self.orca_value} C }}"
+
+
 class EnsembleCluster:
     def __init__(
         self,
