@@ -54,7 +54,12 @@ class ScanCoord:
 
     @classmethod
     def from_current_position(
-        cls, atoms, coords, atom_ids, nsteps, bond_breaking=False
+        cls,
+        atoms: list[str],
+        coords: list[list[float]] | np.ndarray,
+        atom_ids: list[int],
+        nsteps: int,
+        bond_breaking: bool = False,
     ):
         """Create a ScanCoord instance from the current position of atoms.
 
@@ -68,6 +73,7 @@ class ScanCoord:
         Returns:
         - ScanCoord instance.
         """
+        coords = np.asarray(coords)
         if len(atom_ids) == 2:
             start = np.linalg.norm(coords[atom_ids[0]] - coords[atom_ids[1]])
             data_dict = VDW_RADII if bond_breaking else COVALENT_RADII
@@ -82,7 +88,7 @@ class PotentialEnergySurface:
     def __init__(
         self,
         atoms: list[str],
-        coords: np.ndarray,
+        coords: list[list[float]] | np.ndarray,
         charge: int = 0,
         multiplicity: int = 1,
         scan_coords: None | list[dict] | list[ScanCoord] = None,
@@ -96,7 +102,7 @@ class PotentialEnergySurface:
         - multiplicity: Spin multiplicity.
         - scan_coords: List of scan coordinates.
         """
-        self.coords = coords
+        self.coords = np.asarray(coords)
         self.atoms = atoms
         self.charge = charge
         self.multiplicity = multiplicity
@@ -377,9 +383,9 @@ class PotentialEnergySurface:
     def plot_2d(
         self,
         coord_slice: list[int] = [slice(None), slice(None)],
-        ax=None,
-        cbar=True,
-        refined=False,
+        ax: None | plt.Axes = None,
+        cbar: bool = True,
+        refined: bool = False,
         **plt_kwargs,
     ):
         """Plot a 2D slice of the potential energy surface.
@@ -431,7 +437,9 @@ class PotentialEnergySurface:
 
         return fig, ax, cbar
 
-    def plot_point(self, point, mark_point=True, refined=False):
+    def plot_point(
+        self, point: np.ndarray, mark_point: bool = True, refined: bool = False
+    ):
         """Plot all slices through a specific point of the potential energy
         surface.
 
@@ -467,13 +475,13 @@ class PotentialEnergySurface:
 
     def find_stationary_points(
         self,
-        point_type="saddle",
-        tolerance=1e-2,
-        curvature_threshold=1e-3,
-        prune=True,
-        eps=1.0,
-        min_samples=1,
-        refined=False,
+        point_type: str = "saddle",
+        tolerance: float = 1e-2,
+        curvature_threshold: float = 1e-3,
+        prune: bool = True,
+        eps: float = 1.0,
+        min_samples: int = 1,
+        refined: bool = False,
     ):
         """Locates stationary points (minima, maxima, saddle points) on the
         PES.
@@ -564,7 +572,11 @@ class PotentialEnergySurface:
         return clustered_stationary_points
 
     @staticmethod
-    def _detect_saddle_points(smoothed_pes, stationary_mask, curvature_threshold=1e-3):
+    def _detect_saddle_points(
+        smoothed_pes: np.ndarray,
+        stationary_mask: np.ndarray,
+        curvature_threshold: float = 1e-3,
+    ):
         """Detects saddle points by calculating the Hessian and analyzing the
         eigenvalues. A saddle point has a mix of positive and negative
         eigenvalues with significant curvature in the Hessian.
@@ -594,7 +606,7 @@ class PotentialEnergySurface:
         return saddle_points
 
     @staticmethod
-    def _compute_hessian(smoothed_pes):
+    def _compute_hessian(smoothed_pes: np.ndarray):
         """Computes the Hessian matrix (second derivatives) of the PES using
         finite differences.
 
@@ -617,7 +629,9 @@ class PotentialEnergySurface:
         return hessian
 
     @staticmethod
-    def _cluster_stationary_points(data, eps=1.0, min_samples=3):
+    def _cluster_stationary_points(
+        data: np.ndarray, eps: float = 1.0, min_samples: int = 3
+    ):
         points = np.array([entry["idx"] for entry in data])
         grad_mags = np.array([entry["grad_norm"] for entry in data])
 
@@ -634,7 +648,9 @@ class PotentialEnergySurface:
             clustered_points.append(data[best_point_idx])
         return clustered_points
 
-    def check_scan_quality(self, mean_threshold=1e-2, max_threshold=1e-1):
+    def check_scan_quality(
+        self, mean_threshold: float = 1e-2, max_threshold: float = 1e-1
+    ):
         distance_tensors = []
         for sc in self.scan_coords:
             if sc.xtb_ctype == "distance":
