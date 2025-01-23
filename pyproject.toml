@@ -19,7 +19,8 @@ dependencies = [
     "tabulate",
     "tomli",
     "networkx",
-    "scikit-learn"
+    "scikit-learn",
+    "rmsd",
 ]
 
 [tool.setuptools]
