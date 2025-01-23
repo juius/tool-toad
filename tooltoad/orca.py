@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 from pathlib import Path
@@ -103,6 +104,7 @@ def orca_calculate(
             p in clean_option_keys for p in ("opt", "optts", "tightopt", "verytightopt")
         ):
             properties.append("opt_structure")
+            additional_properties.append("traj")
         if any(p in clean_option_keys for p in ("freq", "numfreq")):
             properties.append("vibs")
             properties.append("gibbs_energy")
@@ -120,15 +122,15 @@ def orca_calculate(
         if xtra_inp_str:
             if "scan" in xtra_inp_str.lower():
                 additional_properties.append("scan")
-        results = get_orca_results(lines, properties=properties)
+        results = get_orca_results(copy.deepcopy(lines), properties=properties)
         additional_results = get_additional_results(
-            lines, work_dir, additional_properties
+            copy.deepcopy(lines), work_dir, additional_properties
         )
         results.update(additional_results)
     else:
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("\n".join(lines))
-        results = {"normal_termination": False, "log": "".join(lines)}
+        results = {"normal_termination": False, "log": "\n".join(lines)}
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
@@ -434,7 +436,23 @@ def read_irc(lines: List[str], work_dir: WorkingDir) -> dict:
             "opt_coords": coords,
             "electronic_energy": energy,
         }
+    traj_atoms, traj_coords, traj_energies = read_multi_xyz(
+        work_dir / "input_IRC_Full_trj.xyz",
+        extract_property_function=lambda x: float(x.split()[-1]),
+    )
+    irc_results["traj"] = {
+        "atoms": traj_atoms,
+        "coords": traj_coords,
+        "energies": traj_energies,
+    }
     return irc_results
+
+
+def read_traj(lines: List[str], work_dir: WorkingDir) -> dict:
+    atoms, coords, energies = read_multi_xyz(
+        work_dir / "input_trj.xyz", lambda line: float(line.split()[-1])
+    )
+    return {"atoms": atoms, "coords": coords, "energies": energies}
 
 
 def read_scan(lines: List[str], work_dir: WorkingDir) -> dict:
@@ -502,6 +520,12 @@ def read_goat_react(lines: List[str], work_dir: WorkingDir) -> dict:
     return {"unique_products": unique_products}
 
 
+def read_hessian_str(lines: List[str], work_dir: WorkingDir) -> dict:
+    with open(work_dir / "input.hess", "r") as f:
+        hessian_str = f.read()
+    return {"hessian_str": hessian_str}
+
+
 def get_additional_results(
     lines: List[str], work_dir: WorkingDir, properties: list
 ) -> dict:
@@ -510,6 +534,8 @@ def get_additional_results(
         "scan": read_scan,
         "goat": read_goat,
         "goat-react": read_goat_react,
+        "hessian_str": read_hessian_str,
+        "traj": read_traj,
     }
     additional_results = {"normal_termination": True}
     for property in properties:
