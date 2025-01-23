@@ -289,6 +289,7 @@ def show_vibs(
     height: float = 400,
     numFrames: int = 20,
     amplitude: float = 1.0,
+    transparent: bool = True,
 ):
     """Show normal mode vibration."""
     input = results
@@ -315,8 +316,10 @@ def show_vibs(
         )
     p.mapAtomProperties(propmap)
     p.vibrate(numFrames, amplitude, True)
-    p.animate({"loop": "backAndForth", "interval": 1, "reps": 20})
+    p.animate({"loop": "backAndForth", "interval": 1, "reps": 0})
     p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
+    p.setBackgroundColor("0xeeeeee", int(~transparent))
+    p.zoomTo()
     print(f"Normal mode {vId} with frequency {frequency} cm^-1")
     return p
 
