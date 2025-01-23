@@ -193,6 +193,7 @@ def ts_conf_search(
     orca_options: dict = {"r2scan-3c": None, "smd": "water"},
     scr: str = ".",
     save_dir: str | None = None,
+    **kwargs,
 ):
     """Run GOAT conformer search in ORCA with `goat_options`. Bonds
     that are active in the `ts_mode` are constrained. Obtained conformers
@@ -248,6 +249,7 @@ def ts_conf_search(
         memory=memory,
         options=goat_options,
         scr=scr,
+        **kwargs,
     )
     if save_dir:
         with open(save_dir / "goat_results.json", "w") as f:
@@ -283,6 +285,7 @@ def ts_conf_search(
                 n_cores=n_cores,
                 memory=memory,
                 scr=scr,
+                **kwargs,
             )
             if save_dir:
                 with open(
@@ -300,6 +303,7 @@ def ts_conf_search(
                 n_cores=n_cores,
                 memory=memory,
                 scr=scr,
+                **kwargs,
             )
             if save_dir:
                 with open(
