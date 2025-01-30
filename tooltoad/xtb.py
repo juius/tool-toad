@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import numpy as np
@@ -456,6 +457,74 @@ def read_xtb_results(lines: list[str]) -> dict:
         if key in results:
             results[value] = results[key]
     return results
+
+
+# --------------------- Detailed Input Options -------------------------
+
+
+class BaseOptions:
+    def __str__(self):
+        assert "Options" in self.__class__.__name__
+        name = self.__class__.__name__.replace("Options", "").lower()
+        lines = []
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if value is None:
+                continue
+            if isinstance(value, bool):  # Convert boolean to lowercase string
+                value = str(value).lower()
+            elif isinstance(value, float):  # Format floats with consistent precision
+                value = f"{value:.4f}"
+            elif isinstance(value, list):
+                value = ",".join(map(str, value))
+            delimiter = ":" if "," in str(value) else "="
+            lines.append(f"   {field.name}{delimiter}{value}")
+        return f"${name}\n" + "\n".join(lines) + "\n$end"
+
+
+@dataclass
+class CMA:
+    def __str__(self):
+        return "$cma"
+
+
+@dataclass
+class MDOptions(BaseOptions):
+    temp: float = 300
+    time: float = 50.0  # ps
+    dump: float = 10.0  # fs
+    step: float = 0.4  # fs
+    velo: bool = False
+    shake: int = 1
+    hmass: int = 2
+    sccacc: float = 2.0
+    nvt: bool = True
+    restart: bool = False
+
+
+@dataclass
+class MetaDynOptions(BaseOptions):
+    save: int = 100
+    kpush: float = 1.0
+    alp: float = 0.2
+    coord: None | str = None
+    atoms: None | list[int] = None
+
+
+@dataclass
+class WallOptions(BaseOptions):
+    potential: str = "logfermi"
+    sphere: str = "auto, all"
+    autoscale: None | float = None
+    beta: None | float = 10.0
+    temp: None | float = 6000.0
+    ellipsoid: None | str = None
+    # TODO: add more options
+
+
+@dataclass
+class SCCOptions(BaseOptions):
+    temp: None | float = 6000.0
 
 
 if __name__ == "__main__":
