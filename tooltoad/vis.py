@@ -12,6 +12,7 @@ from PIL import Image
 from rdkit import Chem
 from rdkit.Chem import Draw, rdDepictor
 from rdkit.Geometry import Point2D
+from scipy.interpolate import CubicSpline
 
 from tooltoad.chemutils import ac2xyz
 
@@ -56,6 +57,7 @@ def draw2d(
     legend: str = None,
     atomLabels: dict = None,
     atomHighlights: dict = None,
+    bondLineWidth: int = 1,
     size=(800, 600),
     blackwhite=True,
 ):
@@ -89,7 +91,7 @@ def draw2d(
     dopts.legendFontSize = 45
     dopts.baseFontSize = 0.8
     dopts.additionalAtomLabelPadding = 0.1
-    dopts.bondLineWidth = 1
+    dopts.bondLineWidth = bondLineWidth
     dopts.scaleBondWidth = False
     if blackwhite:
         dopts.useBWAtomPalette()
@@ -275,6 +277,40 @@ def show_traj(input: str | dict, width: float = 600, height: float = 400):
             raise ValueError
     else:
         raise ValueError
+    p = py3Dmol.view(width=width, height=height)
+    p.addModelsAsFrames(traj, "xyz")
+    p.animate({"loop": "forward", "reps": 3})
+    p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
+    return p
+
+
+def interpolate_trajectory(positions, frame_multiplier: int = 10):
+    positions = np.asarray(positions)
+    num_frames = positions.shape[0]
+    frames = np.arange(num_frames)
+    new_frames = np.linspace(0, num_frames - 1, num=num_frames * frame_multiplier)
+
+    # Vectorized cubic spline interpolation
+    spline = CubicSpline(frames, positions, axis=0)
+    return spline(new_frames)
+
+
+def show_traj_v2(
+    atoms, coords, width: float = 600, height: float = 400, interpolation: int = 10
+):
+    """Show xyz trajectory.
+
+    Args:
+        atoms (list): List of atom symbols.
+        coords (list): List of coordinates.
+        width (float, optional): Width of py3dmol. Defaults to 600.
+        height (float, optional): Height of py3dmol. Defaults to 400.
+    """
+    if interpolation:
+        coords = interpolate_trajectory(coords, frame_multiplier=interpolation)
+    traj = ""
+    for coord in coords:
+        traj += ac2xyz(atoms, coord)
     p = py3Dmol.view(width=width, height=height)
     p.addModelsAsFrames(traj, "xyz")
     p.animate({"loop": "forward", "reps": 3})
