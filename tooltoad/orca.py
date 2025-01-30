@@ -1,6 +1,7 @@
 import copy
 import logging
 import os
+import re
 from pathlib import Path
 from typing import List
 
@@ -15,14 +16,8 @@ _logger = logging.getLogger("orca")
 # see https://www.orcasoftware.de/tutorials_orca/first_steps/parallel.html
 load_dotenv()
 
-ORCA_CMD = os.getenv("ORCA_EXE")
-assert (
-    ORCA_CMD
-), "ORCA_EXE not found in environment variables, please set it to the path of the ORCA executable."
-OPEN_MPI_DIR = os.getenv("OPEN_MPI_DIR").rstrip("/")
-assert (
-    OPEN_MPI_DIR
-), "OPEN_MPI_DIR not found in environment variables, please set it to the path of the OpenMPI installation."
+ORCA_CMD = os.getenv("ORCA_EXE", "orca")
+OPEN_MPI_DIR = os.getenv("OPEN_MPI_DIR", "openmpi").rstrip("/")
 ORCA_DIR = Path(ORCA_CMD).parent
 XTB_EXE = os.getenv("XTB_EXE", "xtb")
 SET_ENV = f'env - XTBEXE={XTB_EXE} PATH="{ORCA_DIR}:{OPEN_MPI_DIR}/bin:$PATH" LD_LIBRARY_PATH="{OPEN_MPI_DIR}/lib:$LD_LIBRARY_PATH" DYLD_LIBRARY_PATH="{OPEN_MPI_DIR}/lib:$DYLD_LIBRARY_PATH"'
@@ -94,7 +89,7 @@ def orca_calculate(
     if normal_termination(lines) or force:
         clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
-        properties = ["electronic_energy"]
+        properties = ["electronic_energy", "timings"]
         additional_properties = []
         if "cosmors" in clean_option_keys:
             properties.append("cosmors_dgsolv")
@@ -203,6 +198,23 @@ def read_final_sp_energy(lines: List[str]) -> float:
         if "FINAL SINGLE POINT ENERGY" in line:
             return float(line.split()[-1])
     return None
+
+
+def read_timings(lines: List[str]) -> dict:
+    pattern = r"(\d+) days (\d+) hours (\d+) minutes (\d+) seconds (\d+) msec"
+    for line in reversed(lines):
+        if "TOTAL RUN TIME" in line:
+            match = re.search(pattern, line.strip())
+            if match:
+                runtime_data = {
+                    "days": int(match.group(1)),
+                    "hours": int(match.group(2)),
+                    "minutes": int(match.group(3)),
+                    "seconds": int(match.group(4)),
+                    "milliseconds": int(match.group(5)),
+                }
+                break
+    return runtime_data
 
 
 def read_opt_structure(lines: List[str]) -> tuple:
@@ -553,6 +565,7 @@ def get_orca_results(
         "electronic_energy",
         "mulliken_charges",
         "loewdin_charges",
+        "timings",
     ],
 ) -> dict:
     """Read results from ORCA output.
@@ -577,6 +590,7 @@ def get_orca_results(
         "hirshfeld_charges": read_hirshfeld_charges,  # optional
         "detailed_contributions": get_detailed_contributions,  # optional
         "cosmors_dgsolv": read_cosmors,  # optional
+        "timings": read_timings,  # always read this
     }
 
     if not normal_termination(lines):
