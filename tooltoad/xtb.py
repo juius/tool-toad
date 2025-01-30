@@ -433,8 +433,6 @@ def read_xtb_results(lines: list[str]) -> dict:
 
         # read runtimes
         if i == (runtime_idx + 1):
-            print(line)
-            print(len(line))
             wall_time = parse_time(line)
 
     results = {
