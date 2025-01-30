@@ -1,10 +1,11 @@
 import logging
 import os
+import re
 from pathlib import Path
 
 import numpy as np
 
-from tooltoad.chemutils import xyz2ac
+from tooltoad.chemutils import read_multi_xyz, xyz2ac
 from tooltoad.utils import (
     STANDARD_PROPERTIES,
     WorkingDir,
@@ -28,6 +29,7 @@ def xtb_calculate(
     calc_dir: None | str = None,
     xtb_cmd: str = "xtb",
     force: bool = False,
+    data2file: None | dict = None,
 ) -> dict:
     """Run xTB calculation.
 
@@ -52,6 +54,11 @@ def xtb_calculate(
     # create TMP directory
     work_dir = WorkingDir(root=scr, name=calc_dir)
     xyz_file = write_xyz(atoms, coords, work_dir)
+
+    if data2file:
+        for filename, data in data2file.items():
+            with open(work_dir / filename, "w") as f:
+                f.write(data)
 
     # clean xtb method option
     for k, value in options.items():
@@ -78,10 +85,11 @@ def xtb_calculate(
         cmd += f"--input {fpath.name} "
 
     lines = run_xtb((cmd, xyz_file))
-    if not normal_termination(lines) and not force:
+    results = normal_termination(lines)
+    if not results["normal_termination"] and not force:
         _logger.warning("xTB did not terminate normally")
         _logger.info("".join(lines))
-        results = {"normal_termination": False, "log": "".join(lines)}
+        results["log"] = "".join(lines)
         if calc_dir:
             results["calc_dir"] = str(work_dir)
         else:
@@ -107,11 +115,17 @@ def xtb_calculate(
     if "ohess" in options:
         results.update(read_thermodynamics(lines))
         results["opt_coords"] = read_opt_structure(lines)[-1]
+    if any(s in options for s in ["md", "metadyn"]):
+        results["traj"] = read_meta_md(work_dir / "xtb.trj")
+        results.update(md_normal_termination(lines))
+        results.update(read_mdrestart(work_dir / "mdrestart"))
     if detailed_input or detailed_input_str:
         if any(
             "scan" in x for x in (detailed_input, detailed_input_str) if x is not None
         ):
             results["scan"] = read_scan(work_dir / "xtbscan.log")
+        if "wall" in detailed_input_str and "sphere" in detailed_input_str:
+            results["cavity_radius"] = read_cavity_radius(lines)
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
@@ -178,18 +192,36 @@ def run_xtb(args: tuple[str]) -> list[str]:
     return lines
 
 
-def normal_termination(lines: list[str], strict: bool = False) -> bool:
-    """Check if xTB terminated normally."""
-    first_check = 0
-    for line in reversed(lines):
-        if line.strip().startswith("normal termination"):
-            first_check = 1
-            if not strict:
-                return first_check
-        if "FAILED TO" in line:
-            if strict:
-                return max([0, first_check - 0.5])
-    return first_check
+def normal_termination(lines: list[str]) -> dict:
+    messages = {"normal_termination": True}
+    warnings = []
+    errors = []
+
+    i = 0  # Index to track the current position in the list
+    while i < len(lines):
+        line = lines[i]
+        if "[WARNING]" in line:
+            while "###" not in line:
+                warnings.append(line)
+                i += 1
+                if i >= len(lines):
+                    break
+                line = lines[i]
+        elif "[ERROR]" in line:
+            while "###" not in line:
+                errors.append(line)
+                i += 1
+                if i >= len(lines):
+                    break
+                line = lines[i]
+        i += 1  # Move to the next line after processing
+
+    if warnings:
+        messages["warnings"] = warnings
+    if errors:
+        messages["errors"] = errors
+        messages["normal_termination"] = False
+    return messages
 
 
 def read_opt_structure(lines: list[str]) -> tuple[list[str], list[list[float]]]:
@@ -288,27 +320,65 @@ def read_scan(scan_file) -> dict:
     return {"pes": pes, "traj": traj}
 
 
+def read_meta_md(traj_file) -> dict:
+    _, coords, energies = read_multi_xyz(
+        traj_file, lambda x: float(x.strip().split()[1])
+    )
+    return {"coords": coords, "energies": energies}
+
+
+def read_mdrestart(mdrestart_file):
+    with open(mdrestart_file, "r") as f:
+        mdrestart = f.read()
+    return {"mdrestart": mdrestart}
+
+
+def md_normal_termination(lines: list[str]) -> bool:
+    """Check if MD terminated normally."""
+    checks = {"normal_termination_md": False, "md_stable": True}
+    for line in reversed(lines):
+        if line.strip().startswith("normal exit of md()"):
+            checks["normal_termination_md"] = True
+        elif line.strip().startswith("MD is unstable, emergency exit"):
+            checks["md_stable"] = False
+    return checks
+
+
+def read_cavity_radius(lines: list[str]) -> float:
+    """Read cavity radius from xTB output."""
+    for line in reversed(lines):
+        if "wallpotenial with radius" in line:
+            return float(line.strip().split()[-2])
+    return None
+
+
 def read_xtb_results(lines: list[str]) -> dict:
     """Read basic results from xTB log."""
 
-    def _get_runtime(lines: list[str]) -> float:
-        """Reads xTB runtime in seconds."""
-        _, _, days, _, hours, _, minutes, _, seconds, _ = line.strip().split()
-        total_seconds = (
-            float(seconds)
-            + 60 * float(minutes)
-            + 360 * float(hours)
-            + 86400 * float(days)
+    def parse_time(line):
+        pattern = (
+            r"\* wall-time:\s+(\d+)\s+d,\s+(\d+)\s+h,\s+(\d+)\s+min,\s+([\d\.]+)\s+sec"
         )
-        return total_seconds
+        match = re.search(pattern, line)
 
-    property_start_idx, dipole_idx, quadrupole_idx, runtime_idx, polarizability_idx = (
-        np.nan,
-        np.nan,
-        np.nan,
-        np.nan,
-        np.nan,
-    )
+        if match:
+            return {
+                "days": int(match.group(1)),
+                "hours": int(match.group(2)),
+                "minutes": int(match.group(3)),
+                "seconds": float(match.group(4)),
+            }
+        else:
+            return None
+
+    (
+        property_start_idx,
+        dipole_idx,
+        quadrupole_idx,
+        runtime_idx,
+        polarizability_idx,
+        wall_time,
+    ) = (np.nan, np.nan, np.nan, np.nan, np.nan, None)
     properties = {}
     for i, line in enumerate(lines):
         line = line.strip()
@@ -362,20 +432,16 @@ def read_xtb_results(lines: list[str]) -> dict:
             quadrupole_idx = np.nan
 
         # read runtimes
-        wall_time, cpu_time = np.nan, np.nan
-        if i > runtime_idx:
-            if i == (runtime_idx + 1):
-                wall_time = _get_runtime(line)
-            else:
-                cpu_time = _get_runtime(line)
-                runtime_idx = np.nan
+        if i == (runtime_idx + 1):
+            print(line)
+            print(len(line))
+            wall_time = parse_time(line)
 
     results = {
         "normal_termination": True,
         "programm_call": programm_call,
         "programm_version": xtb_version,
-        "wall_time": wall_time,
-        "cpu_time": cpu_time,
+        "timings": wall_time,
     }
 
     if not np.isnan(polarizability_idx):
