@@ -103,6 +103,7 @@ def orca_calculate(
         if any(p in clean_option_keys for p in ("freq", "numfreq")):
             properties.append("vibs")
             properties.append("gibbs_energy")
+            properties.append("enthalpy")
             if not any(p in clean_option_keys for p in ("xtb1", "xtb2")):
                 properties.append("detailed_contributions")
         # ---------- results from additional files --------------
@@ -371,6 +372,12 @@ def read_gibbs_energy(lines: List[str]) -> float:
             return float(line.split()[-2])
 
 
+def read_enthalpy(lines: List[str]) -> float:
+    for line in reversed(lines):
+        if "Total Enthalpy" in line:
+            return float(line.split()[-2])
+
+
 def get_detailed_contributions(lines: List[str]) -> dict:
     for i, l in enumerate(lines):
         if "Zero point energy" in l:
@@ -393,17 +400,17 @@ def get_detailed_contributions(lines: List[str]) -> dict:
             translational_entropy = float(l.split()[-4])
         elif "G-E(el)" in l:
             gibbs_correction = float(l.split()[-4])
-        elif "rotational entropy values for sn=" in l:
-            sn_idx = i
-            sn_nums = int(l.split(",")[-1].split()[0].rstrip(":"))
-            if lines[sn_idx + 1] == "\n":
-                # in orca6 the sn_idx line is followed by an empty line
-                sn_idx += 1
+    #     elif "rotational entropy values for sn=" in l:
+    #         sn_idx = i
+    #         sn_nums = int(l.split(",")[-1].split()[0].rstrip(":"))
+    #         if lines[sn_idx + 1] == "\n":
+    #             # in orca6 the sn_idx line is followed by an empty line
+    #             sn_idx += 1
 
-    sn_rot_entropy = {}
-    if "sn_idx" in locals():
-        for i, l in enumerate(lines[sn_idx + 2 : sn_idx + 2 + sn_nums]):
-            sn_rot_entropy[i] = float(l.split()[-4])
+    # sn_rot_entropy = {}
+    # if "sn_idx" in locals():
+    #     for i, l in enumerate(lines[sn_idx + 2 : sn_idx + 2 + sn_nums]):
+    #         sn_rot_entropy[i] = float(l.split()[-4])
 
     # format into dict
     detailed_contributions = {
@@ -417,7 +424,7 @@ def get_detailed_contributions(lines: List[str]) -> dict:
         "rotational_entropy": rotational_entropy,
         "translation_entropy": translational_entropy,
         "gibbs_correction": gibbs_correction,
-        "sn_rot_entropy": sn_rot_entropy,
+        # "sn_rot_entropy": sn_rot_entropy,
     }
 
     return detailed_contributions
@@ -585,6 +592,7 @@ def get_orca_results(
         "opt_structure": read_opt_structure,  # optional
         "vibs": read_vibrations,  # optional
         "gibbs_energy": read_gibbs_energy,  # optional
+        "enthalpy": read_enthalpy,  # optional
         "mulliken_charges": read_mulliken_charges,  # always read this
         "loewdin_charges": read_loewdin_charges,  # always read this
         "hirshfeld_charges": read_hirshfeld_charges,  # optional
