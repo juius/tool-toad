@@ -380,6 +380,7 @@ def read_xtb_results(lines: list[str]) -> dict:
         polarizability_idx,
         wall_time,
     ) = (np.nan, np.nan, np.nan, np.nan, np.nan, None)
+    gfn_offset = 0
     properties = {}
     for i, line in enumerate(lines):
         line = line.strip()
@@ -391,6 +392,9 @@ def read_xtb_results(lines: list[str]) -> dict:
             property_start_idx = i
         elif "molecular dipole" in line:
             dipole_idx = i
+            # hack for gfn-ff calc
+            if "gfnff" in programm_call:
+                gfn_offset = 1
         elif "molecular quadrupole" in line:
             quadrupole_idx = i
         elif "total:" in line:
@@ -413,9 +417,9 @@ def read_xtb_results(lines: list[str]) -> dict:
             polarizability = float(line.split()[-1])
 
         # read dipole moment
-        if i > (dipole_idx + 2):
+        if i > (dipole_idx + 2 - gfn_offset):
             dip_x, dip_y, dip_z, dip_norm = [
-                float(x) for x in line.split()[1:]
+                float(x) for x in line.split()[1 + gfn_offset :]
             ]  # norm is in Debye
             dipole_vec = np.array(
                 [dip_x, dip_y, dip_z]
