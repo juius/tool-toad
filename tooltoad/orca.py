@@ -85,7 +85,7 @@ def orca_calculate(
         )
 
     if not log_file:
-        log_file = work_dir / "orca.out"
+        log_file = "orca.out"
     # cmd = f'{set_env}; {orca_cmd} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
     cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp "--use-hwthread-cpus" | tee {log_file}"'
     _logger.debug(f"Running Orca as: {cmd}")
@@ -101,7 +101,7 @@ def orca_calculate(
     if save_files:
         for f in save_files:
             try:
-                shutil.copy(f, save_dir / f)
+                shutil.copy(work_dir / f, save_dir / f)
             except Exception:
                 _logger.error(f"Failed to copy {f} to {save_dir}")
 
