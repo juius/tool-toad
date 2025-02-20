@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -39,6 +40,8 @@ def orca_calculate(
     set_env: str = SET_ENV,
     force: bool = False,
     log_file: str | None = None,
+    save_files: list | None = None,
+    save_dir: str | None = None,
 ) -> dict:
     """Runs ORCA calculation.
 
@@ -60,6 +63,10 @@ def orca_calculate(
     Returns:
          dict: {'atoms': ..., 'coords': ..., ...}
     """
+    if save_files:
+        assert save_dir, "save_dir must be provided if save_files are given"
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
     check_executable(orca_cmd)
     work_dir = WorkingDir(root=scr, name=calc_dir)
 
@@ -90,6 +97,15 @@ def orca_calculate(
         lines.append(line)
         _logger.debug(line.rstrip("\n"))
 
+    # try copying savefiles
+    if save_files:
+        for f in save_files:
+            try:
+                shutil.copy(f, save_dir / f)
+            except Exception:
+                _logger.error(f"Failed to copy {f} to {save_dir}")
+
+    # read results
     if normal_termination(lines) or force:
         clean_option_keys = [k.lower() for k in options.keys()]
         _logger.debug("Orca calculation terminated normally.")
