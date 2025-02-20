@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -87,10 +88,15 @@ def run_crest(
     rel_energies = [hartree2kcalmol(e - min(energies)) for e in energies]
     if not keep_files and not calc_dir:
         wd.cleanup()
-    return [
+
+    results = [
         {"atoms": atoms, "coords": c, "xtb_energy": e}
         for c, e in zip(coords, rel_energies)
     ]
+    time = datetime.now()
+    results["time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    results["timestamp"] = time.timestamp()
+    return results
 
 
 def refine_with_orca(

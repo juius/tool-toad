@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -131,6 +132,15 @@ def orca_calculate(
         results["calc_dir"] = str(work_dir)
     else:
         work_dir.cleanup()
+
+    time = datetime.now()
+    results["time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    results["timestamp"] = time.timestamp()
+    results["atoms"] = atoms
+    results["coords"] = coords
+    results["charge"] = charge
+    results["multiplicity"] = multiplicity
+    results["options"] = options
     return results
 
 

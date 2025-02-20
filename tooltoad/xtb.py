@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, fields
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -111,6 +112,9 @@ def xtb_calculate(
         results["mulliken"] = read_mulliken(work_dir / "charges")
     results["atoms"] = atoms
     results["coords"] = coords
+    results["charge"] = charge
+    results["multiplicity"] = multiplicity
+    results["options"] = options
     if "opt" in options:
         results["opt_coords"] = read_opt_structure(lines)[-1]
     if "ohess" in options:
@@ -131,6 +135,10 @@ def xtb_calculate(
         results["calc_dir"] = str(work_dir)
     else:
         work_dir.cleanup()
+
+    time = datetime.now()
+    results["time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    results["timestamp"] = time.timestamp()
 
     return results
 
