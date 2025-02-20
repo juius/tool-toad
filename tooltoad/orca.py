@@ -38,6 +38,7 @@ def orca_calculate(
     orca_cmd: str = ORCA_CMD,
     set_env: str = SET_ENV,
     force: bool = False,
+    log_file: str | None = None,
 ) -> dict:
     """Runs ORCA calculation.
 
@@ -76,8 +77,10 @@ def orca_calculate(
             )
         )
 
+    if not log_file:
+        log_file = work_dir / "orca.out"
     # cmd = f'{set_env}; {orca_cmd} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
-    cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp "--use-hwthread-cpus" | tee orca.out"'
+    cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp "--use-hwthread-cpus" | tee {log_file}"'
     _logger.debug(f"Running Orca as: {cmd}")
 
     # Run Orca, capture an log output
