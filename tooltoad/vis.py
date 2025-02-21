@@ -98,7 +98,6 @@ def draw2d(
     if atomLabels:
         for key, value in atomLabels.items():
             dopts.atomLabels[key] = value
-
     if legend:
         d2d.DrawMolecule(mol, legend=legend)
     else:
