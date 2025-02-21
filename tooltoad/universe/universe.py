@@ -19,14 +19,6 @@ from tooltoad.xtb import xtb_calculate
 
 from .utils import fibonacci_sphere, get_rotation_matrix
 
-# TODO: take care of charges
-# TODO: add restart
-# DONE TODO: move mdrun function to method
-# TODO: add xtb command-line options
-# TODO: take dump frequency into account
-# have index array to later trim, array has simulation times?
-
-
 _logger = logging.getLogger(__name__)
 
 
@@ -100,8 +92,9 @@ class Universe:
     def from_rdkit(cls, mol: Chem.Mol, cId: int = 0):
         atoms = [atom.GetSymbol() for atom in mol.GetAtoms()]
         coords = mol.GetConformer(cId).GetPositions()
+        charge = Chem.GetFormalCharge(mol)
         ac = Chem.GetAdjacencyMatrix(mol)
-        return cls(atoms=atoms, coords=coords, init_topology=ac)
+        return cls(atoms=atoms, coords=coords, charge=charge, init_topology=ac)
 
     @classmethod
     def from_smiles(
@@ -126,6 +119,7 @@ class Universe:
             Universe: Initialized Universe object with embedded molecules.
         """
         molecules = []
+        charges = []
         for smi in smiles_list:
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
@@ -136,6 +130,7 @@ class Universe:
                 atoms = [a.GetSymbol() for a in mol.GetAtoms()]
                 coords = mol.GetConformer().GetPositions()
                 charge = Chem.GetFormalCharge(mol)
+                charges.append(charge)
                 xtb_options.setdefault("opt", None)
                 opt_results = xtb_calculate(
                     atoms=atoms, coords=coords, charge=charge, options=xtb_options
@@ -147,7 +142,7 @@ class Universe:
 
         all_atoms, all_coords = cls.position_fragments(molecules, radius, random_seed)
         # TODO: check for distances between molecules too small
-        return cls(atoms=all_atoms, coords=all_coords)
+        return cls(atoms=all_atoms, coords=all_coords, charge=sum(charges))
 
     def save(self, file_path: str):
         with open(file_path, "w") as f:
@@ -167,7 +162,10 @@ class Universe:
         fragments: list[Chem.Mol], radius: float = 5.0, random_seed: int = -1
     ):
         # Generate uniformly distributed points on the sphere
-        positions = fibonacci_sphere(len(fragments), radius)
+        if len(fragments) == 1:
+            positions = np.array([[0, 0, 0]])
+        else:
+            positions = fibonacci_sphere(len(fragments), radius)
         rng = np.random.default_rng(random_seed if random_seed > 0 else None)
         rng.shuffle(positions)
 
@@ -209,12 +207,16 @@ class Universe:
         n_cores: int = 1,
         energy_threshold: float = 5.0,
         scr: str = ".",
+        **crest_kwargs,
     ):
         working_dir = WorkingDir(root=scr)
         # run crest with nci
         with open(working_dir / "universe.xyz", "w") as f:
             f.write(ac2xyz(self.atoms, self.coords[0][0]))
-        cmd = f"crest universe.xyz --nci -T {n_cores} | tee crest.log"
+        cmd = f"crest universe.xyz --nci --chrg {self.charge} --T {n_cores} "
+        for k, v in crest_kwargs.items():
+            cmd += f"--{k} {v} "
+        cmd += " | tee crest.log"
         generator = stream(cmd, cwd=str(working_dir))
         lines = []
         for line in generator:
