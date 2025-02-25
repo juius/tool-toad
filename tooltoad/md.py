@@ -154,6 +154,7 @@ def track_trajectory(
 
         with open(traj_file, "r") as file:
             # Read the first line to get the number of atoms
+            file.seek(0)
             n_atoms = int(file.readline().strip())
             lines_per_frame = n_atoms + 2
             while not file_closed:
