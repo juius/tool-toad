@@ -497,12 +497,12 @@ class BaseOptions:
 @dataclass
 class MDOptions(BaseOptions):
     temp: float = 300
-    time: float = 50.0  # ps
+    time: float = 10.0  # ps
     dump: float = 10.0  # every x step, dumptrj
-    sdump: None | float = None  # every x step, dumpcoord
+    sdump: None | float = 250  # every x step, dumpcoord
     step: float = 0.4  # fs
     velo: bool = False
-    shake: int = 1
+    shake: int = 0
     hmass: int = 2
     sccacc: float = 2.0
     nvt: bool = True
@@ -511,15 +511,15 @@ class MDOptions(BaseOptions):
 
 @dataclass
 class MetaDynOptions(BaseOptions):
-    save: int = 100  # maximum number of structures to consider for bias potential
-    kpush: float = 1.0
-    alp: float = 0.2
+    save: int = 250  # maximum number of structures to consider for bias potential
+    kpush: float = 0.075
+    alp: float = 0.3
     coord: None | str = None
     atoms: None | list[int] = None
     # undocumented options
     # https://github.com/grimme-lab/xtb/blob/main/src/set_module.f90#L2541
     static: None | bool = False
-    ramp: None | float = None
+    ramp: None | float = 0.03
     bias_input: None | str = None
 
 
