@@ -158,8 +158,8 @@ def track_trajectory(
 
     # Create a queue to store the frames for processing
     frame_queue = multiprocessing.Queue()
-
-    products = []
+    manager = multiprocessing.Manager()
+    products = manager.list()  # Shared list
 
     # Start worker processes
     workers = []
@@ -324,4 +324,33 @@ if __name__ == "__main__":
         [1.6014333054162806, -0.8143243072840862, 0.22592242918279043],
         [0.22776030452129656, -1.689056742105217, -0.4539184478476502],
     ]
-    products = md_step(atoms, coords)
+    inp_str = """$md
+   temp=300
+   time=10
+   dump=10.0000
+   step=0.4000
+   velo=false
+   shake=0
+   hmass=2
+   sccacc=2.0000
+   nvt=true
+   restart=false
+$end
+$metadyn
+   save=100
+   kpush=0.1500
+   alp=0.3000
+   static=false
+$end
+$wall
+   potential=logfermi
+   sphere:auto, all
+   beta=10.0000
+   temp=6000.0000
+$end
+$scc
+   temp=12000
+$end
+$cma
+"""
+    products = md_step(atoms, coords, detailed_input_str=inp_str)
