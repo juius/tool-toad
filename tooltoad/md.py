@@ -1,14 +1,13 @@
 import json
 import logging
+import multiprocessing
 import os
-import queue
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import networkx as nx
@@ -115,120 +114,6 @@ def isomorphic_to_any(graph, graph_list):
     return False
 
 
-def track_trajectory(
-    xtb_process,
-    traj_file: str,
-    max_products: None | int = None,
-    charge: int = 0,
-    multiplicity: int = 1,
-    opt_options: dict = {},
-    frame_interval: int = 10,
-    num_workers: int = 1,
-    time_interval: int = 1,
-    scr: str = ".",
-):
-    while not os.path.isfile(traj_file):
-        _logger.debug(f"Waiting for trajectory file {traj_file} to be created...")
-        time.sleep(1)
-    frame_count = 0
-    last_position = 0
-    last_mod_time = os.path.getmtime(traj_file)
-    file_closed = False
-
-    # Create a queue to store the frames for processing
-    frame_queue = queue.Queue()
-
-    products = []
-
-    # Create a thread pool to process frames asynchronously with multiple workers
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        _logger.debug(f"Starting {num_workers} worker threads...")
-        for idx in range(num_workers):
-            executor.submit(process_frames, frame_queue, products)
-
-        # Register a signal handler for graceful shutdown
-        signal.signal(
-            signal.SIGINT,
-            lambda signum, frame: graceful_shutdown(executor, frame_queue),
-        )
-
-        with open(traj_file, "r") as file:
-            # Read the first line to get the number of atoms
-            file.seek(0)
-            n_atoms = int(file.readline().strip())
-            lines_per_frame = n_atoms + 2
-            while not file_closed:
-                # Move the pointer to the last position after each frame
-                file.seek(last_position)
-
-                # Read a large block of lines in one go
-                lines = []
-                for _ in range(lines_per_frame):
-                    line = file.readline()
-                    if line:
-                        lines.append(line.strip())
-                    else:
-                        break
-
-                # If there are lines, put them into the queue and process
-                if lines:
-                    last_position = (
-                        file.tell()
-                    )  # Update the position after reading the frame
-                    if frame_count % frame_interval == 0:
-                        # Only add every frame_interval-th frame
-                        atoms, coords = xyz2ac("\n".join(lines))
-                        frame_data = {
-                            "atoms": atoms,
-                            "coords": coords,
-                            "charge": charge,
-                            "multiplicity": multiplicity,
-                            "options": opt_options,
-                            "scr": scr,
-                        }
-                        _logger.info(f"Adding frame {frame_count} to the queue.")
-                        frame_queue.put((frame_count, frame_data))
-                    frame_count += 1
-
-                # If no new data, wait briefly
-                if not lines:
-                    time.sleep(time_interval)
-                if (os.path.getmtime(traj_file) == last_mod_time) and (
-                    file.tell() == os.path.getsize(traj_file)
-                ):
-                    time.sleep(5)
-                    if (os.path.getmtime(traj_file) == last_mod_time) and (
-                        file.tell() == os.path.getsize(traj_file)
-                    ):
-                        file_closed = True
-                else:
-                    last_mod_time = os.path.getmtime(traj_file)
-                if max_products and len(products) >= max_products:
-                    os.killpg(os.getpgid(xtb_process.pid), signal.SIGTERM)
-                    xtb_process.wait()
-                    _logger.info(
-                        "Maximum number of products reached, terminating MD..."
-                    )
-
-                    time.sleep(0.5)
-                    break
-        # cleanup calc dir
-        work_dir = Path(traj_file).parent
-        shutil.rmtree(work_dir)
-        # Collect all the products from the result_queue
-        _logger.info("All frames read, waiting for workers to finish...")
-        # Signal all workers to stop
-        for _ in range(num_workers):
-            frame_queue.put(None)  # Send stop signal to each worker
-
-        # Wait for all workers to finish
-        executor.shutdown(wait=True)
-
-        # Return all found products after file is closed and jobs finished
-        print(f"Found {len(products)} unique products.")
-        return products
-
-
 def process_frames(frame_queue, products):
     """Processes the frames from the queue using multiple workers."""
     product_graphs = []
@@ -251,9 +136,119 @@ def process_frames(frame_queue, products):
                         products.append((frame_count, crude_results))
 
 
-def gfnff_connectivity(atoms, coords, charge, multiplicity):
+def track_trajectory(
+    xtb_process,
+    traj_file: str,
+    max_products: None | int = None,
+    charge: int = 0,
+    multiplicity: int = 1,
+    opt_options: dict = {},
+    frame_interval: int = 10,
+    num_workers: int = 1,
+    time_interval: int = 0.2,
+    scr: str = ".",
+):
+    while not os.path.isfile(traj_file):
+        _logger.debug(f"Waiting for trajectory file {traj_file} to be created...")
+        time.sleep(1)
+    frame_count = 0
+    last_position = 0
+    last_mod_time = os.path.getmtime(traj_file)
+    file_closed = False
+
+    # Create a queue to store the frames for processing
+    frame_queue = multiprocessing.Queue()
+
+    products = []
+
+    # Start worker processes
+    workers = []
+    for _ in range(num_workers):
+        p = multiprocessing.Process(target=process_frames, args=(frame_queue, products))
+        p.start()
+        workers.append(p)
+
+    _logger.debug(f"Starting {num_workers} worker processes...")
+
+    with open(traj_file, "r") as file:
+        # Read the first line to get the number of atoms
+        file.seek(0)
+        n_atoms = int(file.readline().strip())
+        lines_per_frame = n_atoms + 2
+        while not file_closed:
+            # Move the pointer to the last position after each frame
+            file.seek(last_position)
+
+            # Read a large block of lines in one go
+            lines = []
+            for _ in range(lines_per_frame):
+                line = file.readline()
+                if line:
+                    lines.append(line.strip())
+                else:
+                    break
+
+            # If there are lines, put them into the queue and process
+            if lines:
+                last_position = (
+                    file.tell()
+                )  # Update the position after reading the frame
+                if frame_count % frame_interval == 0:
+                    # Only add every frame_interval-th frame
+                    atoms, coords = xyz2ac("\n".join(lines))
+                    frame_data = {
+                        "atoms": atoms,
+                        "coords": coords,
+                        "charge": charge,
+                        "multiplicity": multiplicity,
+                        "options": opt_options,
+                        "scr": scr,
+                    }
+                    _logger.info(f"Adding frame {frame_count} to the queue.")
+                    frame_queue.put((frame_count, frame_data))
+                frame_count += 1
+
+            # If no new data, wait briefly
+            if not lines:
+                time.sleep(time_interval)
+            if (os.path.getmtime(traj_file) == last_mod_time) and (
+                file.tell() == os.path.getsize(traj_file)
+            ):
+                time.sleep(5)
+                if (os.path.getmtime(traj_file) == last_mod_time) and (
+                    file.tell() == os.path.getsize(traj_file)
+                ):
+                    file_closed = True
+            else:
+                last_mod_time = os.path.getmtime(traj_file)
+            if max_products and len(products) >= max_products:
+                os.killpg(os.getpgid(xtb_process.pid), signal.SIGTERM)
+                xtb_process.wait()
+                _logger.info("Maximum number of products reached, terminating MD...")
+
+                time.sleep(0.5)
+                break
+        # cleanup calc dir
+        work_dir = Path(traj_file).parent
+        shutil.rmtree(work_dir)
+        # Collect all the products from the result_queue
+        _logger.info("All frames read, waiting for workers to finish...")
+        # Signal all workers to stop
+        for _ in range(num_workers):
+            frame_queue.put((None, None))
+
+        # Wait for all worker processes to finish
+        for p in workers:
+            p.join()
+
+        # Return all found products after file is closed and jobs finished
+        print(f"Found {len(products)} unique products.")
+        return products
+
+
+def gfnff_connectivity(atoms, coords, charge, multiplicity, scr):
     # Determine connectivity based on GFNFF-xTB implementation
-    calc_dir = tempfile.TemporaryDirectory()
+    calc_dir = tempfile.TemporaryDirectory(dir=scr)
     tmp_file = Path(calc_dir.name) / "input.xyz"
     with open(tmp_file, "w") as f:
         f.write(ac2xyz(atoms, coords))
@@ -270,7 +265,7 @@ def gfnff_connectivity(atoms, coords, charge, multiplicity):
     return adj
 
 
-def analyse_snapshot(frame_count, atoms, coords, charge, multiplicity, options):
+def analyse_snapshot(frame_count, atoms, coords, charge, multiplicity, options, scr):
     """Processes the given frame of lines."""
     try:
         if frame_count > 0:
@@ -279,19 +274,18 @@ def analyse_snapshot(frame_count, atoms, coords, charge, multiplicity, options):
             crude_options.update(options)
             crude_options["opt"] = "crude"
             crude_opt = xtb_calculate(
-                atoms,
-                coords,
-                charge,
-                multiplicity,
-                options=crude_options,
+                atoms, coords, charge, multiplicity, options=crude_options, scr=scr
             )
             # TODO: can't i get the connectivity from the gfn2 calc?
             if not crude_opt["normal_termination"]:
+                _logger.debug("abnormal termination of xTB")
                 return None, None
         else:
             # no optimization on first frame
             crude_opt = {"opt_coords": coords}
-        adj = gfnff_connectivity(atoms, crude_opt["opt_coords"], charge, multiplicity)
+        adj = gfnff_connectivity(
+            atoms, crude_opt["opt_coords"], charge, multiplicity, scr=scr
+        )
         graph = nx.from_numpy_array(adj)
         for i, atom_type in enumerate(atoms):
             graph.nodes[i]["atom_type"] = atom_type
@@ -315,11 +309,19 @@ def graceful_shutdown(executor, frame_queue):
 
 
 if __name__ == "__main__":
-    _logger.setLevel(logging.INFO)
+    _logger.setLevel(logging.DEBUG)
     _logger.addHandler(logging.StreamHandler())
-    # Replace with the path to your trajectory file
-    products = track_trajectory(
-        "/Users/julius/opt/d2/notebooks/imiprimine-0/xtb.trj",
-        frame_interval=25,
-        num_workers=4,
-    )
+    atoms = ["N", "C", "C", "H", "H", "H", "H", "H", "H", "H"]
+    coords = [
+        [-0.2577470988117524, 0.8838829383188083, -0.8275401594278511],
+        [-0.2973839315307961, 0.18801894294025928, 0.44958897759676597],
+        [0.5551310303425486, -1.0719018812590675, 0.37795118183108517],
+        [0.6944457068755073, 1.1620435600146073, -1.043225225779833],
+        [-0.8253498651802484, 1.7238103063235921, -0.7935680193355253],
+        [-1.3397283093410641, -0.08443617703404037, 0.6389978412023933],
+        [0.045652467786225295, 0.8117651474128725, 1.294316580848435],
+        [0.46770576806958214, -1.6405193020514737, 1.2996801209055018],
+        [1.6014333054162806, -0.8143243072840862, 0.22592242918279043],
+        [0.22776030452129656, -1.689056742105217, -0.4539184478476502],
+    ]
+    products = md_step(atoms, coords)
