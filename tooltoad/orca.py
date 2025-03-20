@@ -80,6 +80,8 @@ def orca_calculate(
                 f.write(data)
 
     # append json output
+    if not xtra_inp_str:
+        xtra_inp_str = ""
     xtra_inp_str += """%Method
   WriteJSONPropertyfile True
 end"""
