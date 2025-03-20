@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 import os
 import re
@@ -16,7 +17,8 @@ from tooltoad.utils import WorkingDir, check_executable, stream
 _logger = logging.getLogger("orca")
 
 # see https://www.orcasoftware.de/tutorials_orca/first_steps/parallel.html
-load_dotenv()
+PARENT_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(PARENT_DIR / ".env")
 
 ORCA_CMD = os.getenv("ORCA_EXE", "orca")
 OPEN_MPI_DIR = os.getenv("OPEN_MPI_DIR", "openmpi").rstrip("/")
@@ -40,8 +42,10 @@ def orca_calculate(
     set_env: str = SET_ENV,
     force: bool = False,
     log_file: str | None = None,
+    read_files: list | None = None,
     save_files: list | None = None,
     save_dir: str | None = None,
+    data2file: None | dict = None,
 ) -> dict:
     """Runs ORCA calculation.
 
@@ -69,6 +73,16 @@ def orca_calculate(
         save_dir.mkdir(parents=True, exist_ok=True)
     check_executable(orca_cmd)
     work_dir = WorkingDir(root=scr, name=calc_dir)
+
+    if data2file:
+        for filename, data in data2file.items():
+            with open(work_dir / filename, "w") as f:
+                f.write(data)
+
+    # append json output
+    xtra_inp_str += """%Method
+  WriteJSONPropertyfile True
+end"""
 
     with open(work_dir / "input.inp", "w") as f:
         f.write(
@@ -147,6 +161,15 @@ def orca_calculate(
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("\n".join(lines))
         results = {"normal_termination": False, "log": "\n".join(lines)}
+
+    # read the json
+    with open(work_dir / "input.property.json", "r") as f:
+        results["json"] = json.load(f)
+
+    if read_files:
+        for f in read_files:
+            with open(work_dir / f, "r") as _f:
+                results[f] = _f.read()
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
