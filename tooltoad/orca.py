@@ -163,8 +163,11 @@ end"""
         results = {"normal_termination": False, "log": "\n".join(lines)}
 
     # read the json
-    with open(work_dir / "input.property.json", "r") as f:
-        results["json"] = json.load(f)
+    try:
+        with open(work_dir / "input.property.json", "r") as f:
+            results["json"] = json.load(f)
+    except FileNotFoundError:
+        _logger.warning("No json property file found")
 
     if read_files:
         for f in read_files:
