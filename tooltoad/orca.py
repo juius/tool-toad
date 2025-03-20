@@ -157,22 +157,24 @@ end"""
             copy.deepcopy(lines), work_dir, additional_properties
         )
         results.update(additional_results)
+        #  read the json
+        try:
+            with open(work_dir / "input.property.json", "r") as f:
+                results["json"] = json.load(f)
+        except FileNotFoundError:
+            _logger.warning("File 'input.property.json' not found")
     else:
         _logger.warning("Orca calculation did not terminate normally.")
         _logger.info("\n".join(lines))
         results = {"normal_termination": False, "log": "\n".join(lines)}
 
-    # read the json
-    try:
-        with open(work_dir / "input.property.json", "r") as f:
-            results["json"] = json.load(f)
-    except FileNotFoundError:
-        _logger.warning("No json property file found")
-
     if read_files:
         for f in read_files:
             with open(work_dir / f, "r") as _f:
-                results[f] = _f.read()
+                try:
+                    results[f] = _f.read()
+                except FileNotFoundError:
+                    _logger.warning(f"File {f} not found")
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:
