@@ -145,10 +145,10 @@ def track_trajectory(
     opt_options: dict = {},
     frame_interval: int = 10,
     num_workers: int = 1,
-    time_interval: int = 0.2,
+    time_interval: int = 2,
     scr: str = ".",
 ):
-    while not os.path.isfile(traj_file):
+    while not os.path.isfile(traj_file) or os.path.getsize(traj_file) == 0:
         _logger.debug(f"Waiting for trajectory file {traj_file} to be created...")
         time.sleep(1)
     frame_count = 0
@@ -214,7 +214,7 @@ def track_trajectory(
             if (os.path.getmtime(traj_file) == last_mod_time) and (
                 file.tell() == os.path.getsize(traj_file)
             ):
-                time.sleep(5)
+                time.sleep(10)
                 if (os.path.getmtime(traj_file) == last_mod_time) and (
                     file.tell() == os.path.getsize(traj_file)
                 ):
@@ -243,6 +243,7 @@ def track_trajectory(
 
         # Return all found products after file is closed and jobs finished
         print(f"Found {len(products)} unique products.")
+
         return products
 
 
