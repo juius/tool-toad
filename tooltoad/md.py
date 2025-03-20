@@ -133,7 +133,16 @@ def process_frames(frame_queue, products):
                     product_graphs.append(graph)
                     if frame_count > 0:
                         _logger.info("New product found.")
-                        products.append((frame_count, crude_results))
+                        # properly optimizing the product
+                        opt_results = xtb_calculate(
+                            crude_results["atoms"],
+                            crude_results["opt_coords"],
+                            crude_results["charge"],
+                            crude_results["multiplicity"],
+                            options=frame_data["options"],
+                            scr=frame_data["scr"],
+                        )
+                        products.append((frame_count, opt_results))
 
 
 def track_trajectory(
@@ -354,4 +363,4 @@ $scc
 $end
 $cma
 """
-    products = md_step(atoms, coords, detailed_input_str=inp_str)
+    products = md_step(atoms, coords, detailed_input_str=inp_str, n_opt_cores=4)
