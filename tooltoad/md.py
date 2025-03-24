@@ -2,7 +2,6 @@ import json
 import logging
 import multiprocessing
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -36,6 +35,7 @@ def md_step(
     xtb_cmd: str = "xtb",
     data2file: None | dict = None,
 ):
+    options = options.copy()
     options["md"] = None
     check_executable(xtb_cmd)
     set_threads(n_md_cores)
@@ -91,6 +91,9 @@ def md_step(
         opt_options=opt_options,
         scr=scr,
     )
+    # cleanup calc dir
+    if not calc_dir:
+        work_dir.cleanup()
     return products
 
 
@@ -127,22 +130,15 @@ def process_frames(frame_queue, products):
         if frame_data:
             _logger.info(f"Processing frame {frame_count}...")
             graph, crude_results = analyse_snapshot(frame_count, **frame_data)
+            if crude_results is None or not crude_results["normal_termination"]:
+                continue
             _logger.info(f"Frame {frame_count} processed.")
             if graph:
                 if not isomorphic_to_any(graph, product_graphs):
                     product_graphs.append(graph)
                     if frame_count > 0:
                         _logger.info("New product found.")
-                        # properly optimizing the product
-                        opt_results = xtb_calculate(
-                            crude_results["atoms"],
-                            crude_results["opt_coords"],
-                            crude_results["charge"],
-                            crude_results["multiplicity"],
-                            options=frame_data["options"],
-                            scr=frame_data["scr"],
-                        )
-                        products.append((frame_count, opt_results))
+                        products.append((frame_count, crude_results))
 
 
 def track_trajectory(
@@ -231,15 +227,15 @@ def track_trajectory(
             else:
                 last_mod_time = os.path.getmtime(traj_file)
             if max_products and len(products) >= max_products:
-                os.killpg(os.getpgid(xtb_process.pid), signal.SIGTERM)
+                try:
+                    os.killpg(os.getpgid(xtb_process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
                 xtb_process.wait()
                 _logger.info("Maximum number of products reached, terminating MD...")
 
                 time.sleep(0.5)
                 break
-        # cleanup calc dir
-        work_dir = Path(traj_file).parent
-        shutil.rmtree(work_dir)
         # Collect all the products from the result_queue
         _logger.info("All frames read, waiting for workers to finish...")
         # Signal all workers to stop
@@ -251,7 +247,7 @@ def track_trajectory(
             p.join()
 
         # Return all found products after file is closed and jobs finished
-        print(f"Found {len(products)} unique products.")
+        _logger.info(f"Found {len(products)} unique products.")
 
         return products
 
@@ -292,7 +288,13 @@ def analyse_snapshot(frame_count, atoms, coords, charge, multiplicity, options, 
                 return None, None
         else:
             # no optimization on first frame
-            crude_opt = {"opt_coords": coords}
+            crude_opt = {
+                "atoms": atoms,
+                "opt_coords": coords,
+                "charge": charge,
+                "multiplicity": multiplicity,
+                "normal_termination": True,
+            }
         adj = gfnff_connectivity(
             atoms, crude_opt["opt_coords"], charge, multiplicity, scr=scr
         )
