@@ -13,6 +13,7 @@ import networkx as nx
 import numpy as np
 
 from tooltoad.chemutils import ac2xyz, xyz2ac
+from tooltoad.orca import orca_calculate
 from tooltoad.utils import WorkingDir, check_executable, stream
 from tooltoad.xtb import set_threads, write_xyz, xtb_calculate
 
@@ -138,7 +139,25 @@ def process_frames(frame_queue, products):
                     product_graphs.append(graph)
                     if frame_count > 0:
                         _logger.info("New product found.")
-                        products.append((frame_count, crude_results))
+                        _logger.info("Performing full optimization...")
+                        opt_options = frame_data["options"].copy()
+                        opt_options["opt"] = None
+                        opt_options["freq"] = None
+                        opt_options["XTB2"] = None
+                        opt_results = orca_calculate(
+                            atoms=crude_results["atoms"],
+                            coords=crude_results["opt_coords"],
+                            charge=crude_results["charge"],
+                            multiplicity=crude_results["multiplicity"],
+                            options=opt_options,
+                            scr=frame_data["scr"],
+                            n_cores=1,
+                        )
+                        if opt_results["normal_termination"]:
+                            _logger.info("Full optimization successful.")
+                            products.append((frame_count, opt_results))
+                        else:
+                            _logger.info("Full optimization failed.")
 
 
 def track_trajectory(
