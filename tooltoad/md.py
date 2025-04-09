@@ -12,7 +12,7 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 
-from tooltoad.chemutils import ac2xyz, xyz2ac
+from tooltoad.chemutils import ac2xyz, read_multi_xyz, xyz2ac
 from tooltoad.orca import orca_calculate
 from tooltoad.utils import WorkingDir, check_executable, stream
 from tooltoad.xtb import set_threads, write_xyz, xtb_calculate
@@ -35,6 +35,7 @@ def md_step(
     calc_dir: None | str = None,
     xtb_cmd: str = "xtb",
     data2file: None | dict = None,
+    save_traj: bool = False,
 ):
     options = options.copy()
     options["md"] = None
@@ -92,6 +93,10 @@ def md_step(
         opt_options=opt_options,
         scr=scr,
     )
+    if save_traj:
+        traj = read_multi_xyz(str((xyz_file.parent / "xtb.trj").absolute()))
+        products = (products, traj)
+
     # cleanup calc dir
     if not calc_dir:
         work_dir.cleanup()
@@ -268,7 +273,7 @@ def track_trajectory(
         # Return all found products after file is closed and jobs finished
         _logger.info(f"Found {len(products)} unique products.")
 
-        return products
+        return list(products)
 
 
 def gfnff_connectivity(atoms, coords, charge, multiplicity, scr):

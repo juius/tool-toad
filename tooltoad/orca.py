@@ -67,12 +67,15 @@ def orca_calculate(
     Returns:
          dict: {'atoms': ..., 'coords': ..., ...}
     """
+
     if save_files:
         assert save_dir, "save_dir must be provided if save_files are given"
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
     check_executable(orca_cmd)
     work_dir = WorkingDir(root=scr, name=calc_dir)
+    os.environ["XTBPATH"] = str(work_dir)
+    print(os.getenv("XTBPATH"))
 
     if data2file:
         for filename, data in data2file.items():
