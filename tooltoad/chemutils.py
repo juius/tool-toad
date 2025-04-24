@@ -17,6 +17,7 @@ from rdkit.Chem import (
     rdFMCS,
     rdMolAlign,
     rdMolDescriptors,
+    rdmolops,
 )
 from rdkit.ML.Cluster import Butina
 from sklearn.cluster import DBSCAN
@@ -444,7 +445,8 @@ def determine_connectivity_xtb(mol: Chem.Mol) -> Chem.Mol:
     calc_dir = tempfile.TemporaryDirectory()
     tmp_file = Path(calc_dir.name) / "input.xyz"
     Chem.MolToXYZFile(mol, str(tmp_file))
-    CMD = f"xtb --gfnff {str(tmp_file)} --norestart --wrtopo nb"
+    charge = rdmolops.GetFormalCharge(mol)
+    CMD = f"xtb --gfnff {str(tmp_file)} -c {int(charge)} --norestart --wrtopo nb"
     output = list(stream(CMD, cwd=calc_dir.name))
     logger.debug("".join(output))
     with open(Path(calc_dir.name) / "gfnff_lists.json", "r") as f:
@@ -519,6 +521,7 @@ def ac2mol(
     coords: List[list],
     charge: int = 0,
     perceive_connectivity: bool = True,
+    use_xtb: bool = False,
     sanitize: bool = True,
 ):
     """Converts atom symbols and coordinates to RDKit molecule."""
@@ -529,7 +532,7 @@ def ac2mol(
     if charge != 0:
         rdkit_mol.GetAtomWithIdx(0).SetFormalCharge(charge)
     if perceive_connectivity:
-        _determineConnectivity(rdkit_mol)
+        _determineConnectivity(rdkit_mol, usextb=use_xtb)
     return rdkit_mol
 
 
