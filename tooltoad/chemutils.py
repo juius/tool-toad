@@ -470,7 +470,17 @@ def determine_connectivity_xtb(mol: Chem.Mol) -> Chem.Mol:
 def _determineConnectivity(mol, usextb=False, **kwargs):
     """Determine bonds in molecule."""
     if usextb:
-        mol = determine_connectivity_xtb(mol)
+        atoms = [a.GetSymbol() for a in mol.GetAtoms()]
+        coords = mol.GetConformer().GetPositions()
+        charge = rdmolops.GetFormalCharge(mol)
+        multiplicity = kwargs.get("multiplicity", 1)
+        scr = kwargs.get("scr", ".")
+        adj = gfnff_connectivity(atoms, coords, charge, multiplicity, scr)
+        emol = Chem.EditableMol(mol)
+        for i, j in np.argwhere(adj):
+            if i > j:
+                emol.AddBond(int(i), int(j), Chem.BondType.SINGLE)
+        mol = emol.GetMol()
     else:
         try:
             rdDetermineBonds.DetermineConnectivity(mol, **kwargs)
@@ -520,9 +530,11 @@ def ac2mol(
     atoms: List[str],
     coords: List[list],
     charge: int = 0,
+    multiplicity: int = 1,
+    scr: str = ".",
     perceive_connectivity: bool = True,
     use_xtb: bool = False,
-    sanitize: bool = True,
+    sanitize: bool = False,
 ):
     """Converts atom symbols and coordinates to RDKit molecule."""
     xyz = ac2xyz(atoms, coords)
@@ -532,7 +544,9 @@ def ac2mol(
     if charge != 0:
         rdkit_mol.GetAtomWithIdx(0).SetFormalCharge(charge)
     if perceive_connectivity:
-        _determineConnectivity(rdkit_mol, usextb=use_xtb)
+        rdkit_mol = _determineConnectivity(
+            rdkit_mol, usextb=use_xtb, charge=charge, multiplicity=multiplicity, scr=scr
+        )
     return rdkit_mol
 
 
@@ -546,3 +560,22 @@ def iteratively_determine_bonds(mol, linspace=np.linspace(0.3, 0.1, 30)):
             break
     if not nx.is_connected(graph):
         raise ValueError("Molecule contains disconnected fragments")
+
+
+def gfnff_connectivity(atoms, coords, charge, multiplicity, scr):
+    # Determine connectivity based on GFNFF-xTB implementation
+    calc_dir = tempfile.TemporaryDirectory(dir=scr)
+    tmp_file = Path(calc_dir.name) / "input.xyz"
+    with open(tmp_file, "w") as f:
+        f.write(ac2xyz(atoms, coords))
+    CMD = f"xtb --gfnff {str(tmp_file.name)} --chrg {charge} --uhf {multiplicity-1} --norestart --wrtopo blist"
+    _ = list(stream(CMD, cwd=calc_dir.name))
+    with open(Path(calc_dir.name) / "gfnff_lists.json", "r") as f:
+        data_dict = json.load(f)
+    calc_dir.cleanup()
+    blist = data_dict["blist"]
+    adj = np.zeros((len(atoms), len(atoms)), dtype=int)
+    for i, j, _ in blist:
+        adj[i - 1, j - 1] = 1
+        adj[j - 1, i - 1] = 1
+    return adj

@@ -9,7 +9,6 @@ from queue import Empty
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import rdDetermineBonds
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -61,7 +60,6 @@ def process_scoord_files(
                     mol = ac2mol(
                         crude_opt["atoms"], crude_opt["opt_coords"], use_xtb=True
                     )
-                    rdDetermineBonds.DetermineConnectivity(mol)
                     smiles = Chem.MolToSmiles(mol)
                     _logger.info(f"Initial SMILES: {init_smiles}")
                     _logger.info(f"Current SMILES: {smiles}")
@@ -99,7 +97,6 @@ def process_structure(
             return None
 
         mol = ac2mol(crude_opt["atoms"], crude_opt["opt_coords"], use_xtb=True)
-        rdDetermineBonds.DetermineConnectivity(mol)
         smiles = Chem.MolToSmiles(mol)
         _logger.info(f"Processed SMILES: {smiles}")
 
@@ -246,7 +243,6 @@ def track_tajectory_v2(
                                 crude_opt["opt_coords"],
                                 use_xtb=True,
                             )
-                            rdDetermineBonds.DetermineConnectivity(mol)
                             smiles = Chem.MolToSmiles(mol)
                             _logger.info(f"Initial SMILES: {init_smiles}")
                             _logger.info(f"Current SMILES: {smiles}")
@@ -342,7 +338,6 @@ def md_step(
     env = os.environ.copy()
 
     init_mol = ac2mol(atoms, coords, use_xtb=True)
-    rdDetermineBonds.DetermineConnectivity(init_mol)
     init_smiles = Chem.MolToSmiles(init_mol)
 
     # create TMP directory
