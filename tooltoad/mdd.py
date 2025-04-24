@@ -66,6 +66,7 @@ def process_scoord_files(
                     if smiles != init_smiles:
                         _logger.info("New SMILES found! Terminating processes...")
                         crude_opt["smiles"] = smiles
+                        crude_opt["frame"] = Path(filepath).suffix
                         result_queue.put(crude_opt)
                         return
                     else:
@@ -250,6 +251,7 @@ def track_tajectory_v2(
                             if smiles != init_smiles:
                                 _logger.info("New SMILES found! Terminating process...")
                                 crude_opt["smiles"] = smiles
+                                crude_opt["frame"] = Path(filepath).suffix.lstrip(".")
                                 with result_lock:
                                     result = crude_opt
                                 stop_event.set()
@@ -336,10 +338,8 @@ def md_step(
     check_executable(xtb_cmd)
     set_threads(n_md_cores)
     env = os.environ.copy()
-
     init_mol = ac2mol(atoms, coords, use_xtb=True)
     init_smiles = Chem.MolToSmiles(init_mol)
-
     # create TMP directory
     work_dir = WorkingDir(root=scr, name=calc_dir)
     xyz_file = write_xyz(atoms, coords, work_dir)
@@ -447,9 +447,6 @@ $end
 $cma
 """
 
-    import shutil
-
-    shutil.rmtree("mdd/")
     import submitit
 
     executor = submitit.AutoExecutor(
@@ -469,6 +466,8 @@ $cma
     results = md_step(
         atoms, coords, detailed_input_str=inp_str, n_opt_cores=4, calc_dir="mdd"
     )
+
+    print(results)
 
     def wrap(*args, **kwrags):
         print("got here")
