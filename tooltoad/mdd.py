@@ -58,7 +58,9 @@ def process_scoord_files(
                     atoms, coords, charge, multiplicity, options=opt_options
                 )
                 if crude_opt["normal_termination"]:
-                    mol = ac2mol(crude_opt["atoms"], crude_opt["opt_coords"])
+                    mol = ac2mol(
+                        crude_opt["atoms"], crude_opt["opt_coords"], use_xtb=True
+                    )
                     rdDetermineBonds.DetermineConnectivity(mol)
                     smiles = Chem.MolToSmiles(mol)
                     _logger.info(f"Initial SMILES: {init_smiles}")
@@ -96,7 +98,7 @@ def process_structure(
             _logger.info("Abnormal xtb termination")
             return None
 
-        mol = ac2mol(crude_opt["atoms"], crude_opt["opt_coords"])
+        mol = ac2mol(crude_opt["atoms"], crude_opt["opt_coords"], use_xtb=True)
         rdDetermineBonds.DetermineConnectivity(mol)
         smiles = Chem.MolToSmiles(mol)
         _logger.info(f"Processed SMILES: {smiles}")
@@ -239,7 +241,11 @@ def track_tajectory_v2(
                         )
 
                         if crude_opt["normal_termination"]:
-                            mol = ac2mol(crude_opt["atoms"], crude_opt["opt_coords"])
+                            mol = ac2mol(
+                                crude_opt["atoms"],
+                                crude_opt["opt_coords"],
+                                use_xtb=True,
+                            )
                             rdDetermineBonds.DetermineConnectivity(mol)
                             smiles = Chem.MolToSmiles(mol)
                             _logger.info(f"Initial SMILES: {init_smiles}")
@@ -335,7 +341,7 @@ def md_step(
     set_threads(n_md_cores)
     env = os.environ.copy()
 
-    init_mol = ac2mol(atoms, coords)
+    init_mol = ac2mol(atoms, coords, use_xtb=True)
     rdDetermineBonds.DetermineConnectivity(init_mol)
     init_smiles = Chem.MolToSmiles(init_mol)
 
