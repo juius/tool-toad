@@ -10,6 +10,7 @@ from typing import List
 import networkx as nx
 import numpy as np
 from hide_warnings import hide_warnings
+from joblib import Parallel, delayed
 from rdkit import Chem
 from rdkit.Chem import (
     ResonanceMolSupplier,
@@ -19,6 +20,7 @@ from rdkit.Chem import (
     rdMolDescriptors,
     rdmolops,
 )
+from rdkit.Chem.rdchem import Mol
 from rdkit.ML.Cluster import Butina
 from sklearn.cluster import DBSCAN
 
@@ -42,6 +44,16 @@ VDW_RADII = {
     "S": 1.8,
     # Add more as needed
 }
+
+# convert solvent names to canonical names
+# at least in xtb 6.7.1 the DCM name doesn't work
+CANONICAL_SOLVENT_NAMES = {"xtb": {"dcm": "ch2cl2"}, "orca": {}}
+
+
+def canonicalize_solvent(solvent: str, qm: str):
+    assert qm.lower() in ["xtb", "orca"], "QM must be either xtb or orca"
+    if solvent:
+        return CANONICAL_SOLVENT_NAMES[qm.lower()].get(solvent.lower(), solvent)
 
 
 class Constraint:
@@ -98,6 +110,260 @@ class Constraint:
     @property
     def orca(self):
         return f"{{ {self.orca_type} {' '.join([str(x) for x in self.orca_ids])} {self.orca_value} C }}"
+
+
+class ConformerCalculator:
+    """Calculator for parallel QM calculations on conformers of a molecule."""
+
+    qm_functions = ["xtb_calculate", "orca_calculate"]
+
+    def __init__(self, qm_function, options: dict, scr: str = "."):
+        assert (
+            qm_function.__name__ in self.qm_functions
+        ), f"QM function {qm_function} not supported."
+        self.qm_function = qm_function
+        self.options = options
+        self.scr = scr
+
+    def __call__(
+        self,
+        mol: Mol,
+        multiplicity: None | int = None,
+        n_cores: int = 1,
+        memory: int = 4,
+        constraints: None | list[Constraint] = None,
+    ):
+        atoms = [a.GetSymbol() for a in mol.GetAtoms()]
+        coords = [conf.GetPositions() for conf in mol.GetConformers()]
+        charge = Chem.GetFormalCharge(mol)
+        if not multiplicity:
+            multiplicity = (
+                sum([a.GetAtomicNum() for a in mol.GetAtoms()]) - charge
+            ) % 2 + 1
+        kwargs = {}
+        if constraints:
+            if self.qm_function.__name__ == "xtb_calculate":
+                joined_constraints = "\n".join(c.xtb for c in constraints)
+                kwargs[
+                    "detailed_input_str"
+                ] = f"""$constrain
+   {joined_constraints}
+$end"""
+            elif self.qm_function.__name__ == "orca_calculate":
+                joined_constraints = "\n".join(c.orca for c in constraints)
+                kwargs[
+                    "xtra_inp_str"
+                ] = f"""%geom Constraints
+        {joined_constraints}
+        end
+      end"""
+            else:
+                raise ValueError("QM function not supported")
+        results = Parallel(n_jobs=n_cores)(
+            delayed(self.qm_function)(
+                atoms=atoms,
+                coords=c,
+                charge=charge,
+                multiplicity=multiplicity,
+                options=self.options,
+                scr=self.scr,
+                # memory=memory,
+                n_cores=1,
+                **kwargs,
+            )
+            for c in coords
+        )
+        new_mol = Chem.Mol(mol)
+        new_mol.RemoveAllConformers()
+        # sort results by electronic_energy if results["normal_termination"] else np.inf
+        results = sorted(
+            results,
+            key=lambda x: x["electronic_energy"] if x["normal_termination"] else np.inf,
+        )
+        ac_diffs = []
+        for result in results:
+            if not result["normal_termination"]:
+                logger.warning("Error in QM calculation")
+            else:
+                if "opt" in self.options:
+                    coords = result["opt_coords"]
+                    # check for change in connectivity
+                    connectivity_check, ac_diff = same_connectivity(
+                        mol,
+                        atoms,
+                        result["opt_coords"],
+                        charge,
+                        multiplicity,
+                        self.scr,
+                    )
+                    if not connectivity_check:
+                        ac_diffs.append(ac_diff)
+                        logger.debug(
+                            "Change in connectivity during optimization, skipping conformer."
+                        )
+                        continue
+                else:
+                    coords = result["coords"]
+                conf = Chem.Conformer(mol.GetNumAtoms())
+                conf.SetDoubleProp("electronic_energy", result["electronic_energy"])
+                conf.SetPositions(np.array(coords))
+                _ = new_mol.AddConformer(conf, assignId=True)
+        if len(new_mol.GetConformers()) == 0:
+            logger.warning("No conformers found")
+            return new_mol, ac_diffs
+        return new_mol, None
+
+
+class MolCalculator:
+    """Calculator for parallel QM calculations on list/dict of a molecules."""
+
+    qm_functions = ["xtb_calculate", "orca_calculate"]
+
+    def __init__(self, qm_function: str, options: dict, scr: str = "."):
+        assert (
+            qm_function.__name__ in self.qm_functions
+        ), f"QM function {qm_function} not supported."
+        self.qm_function = qm_function
+        self.options = options
+        self.scr = scr
+
+    def __call__(
+        self,
+        mols: dict[str, Mol] | list[Mol],
+        multiplicities: list[int] = None,
+        n_cores: int = 1,
+        memory: int = 4,
+    ):
+        dtype = "list"
+        if isinstance(mols, dict):
+            dtype = "dict"
+            labels = list(mols.keys())
+            mols = list(mols.values())
+        elif not isinstance(mols, list):
+            raise ValueError("mols must be a list or dict")
+        for mol in mols:
+            assert mol.GetNumConformers() == 1, "Molecules must have only one conformer"
+
+        def wrap(
+            mol: Mol,
+            qm_function: str,
+            scr: str,
+            multiplicity: int,
+            n_cores: int,
+        ):
+            atoms = [a.GetSymbol() for a in mol.GetAtoms()]
+            coords = mol.GetConformer().GetPositions()
+            charge = Chem.GetFormalCharge(mol)
+            if not multiplicity:
+                multiplicity = (
+                    sum([a.GetAtomicNum() for a in mol.GetAtoms()]) - charge
+                ) % 2 + 1
+            results = qm_function(
+                atoms=atoms,
+                coords=coords,
+                charge=charge,
+                multiplicity=multiplicity,
+                options=self.options,
+                scr=scr,
+                # memory=memory,
+                n_cores=n_cores,
+            )
+            if results["normal_termination"]:
+                mol.SetDoubleProp("electronic_energy", results["electronic_energy"])
+            else:
+                logger.warning("Error in QM calculation")
+                logger.warning(results["log"])
+            return results
+
+        results = Parallel(n_jobs=n_cores)(
+            delayed(wrap)(
+                mol=mol,
+                qm_function=self.qm_function,
+                scr=self.scr,
+                multiplicity=multiplicities[i] if multiplicities else None,
+                n_cores=1,
+                # memory=memory,
+            )
+            for i, mol in enumerate(mols)
+        )
+        for res, mol in zip(results, mols):
+            if res["normal_termination"]:
+                mol.SetDoubleProp("electronic_energy", res["electronic_energy"])
+            else:
+                logger.warning("Error in QM calculation")
+                logger.warning(res["log"])
+                mol.SetDoubleProp("electronic_energy", np.inf)
+        if dtype == "dict":
+            return {labels[i]: mol for i, mol in enumerate(mols)}
+        else:
+            return mols
+
+
+def same_connectivity(
+    mol: Mol,
+    atoms: list[str],
+    opt_coords: list[list[float]],
+    charge: int,
+    multiplicity: int,
+    scr: str,
+) -> tuple[bool, None | np.ndarray]:
+    """Check if the connectivity of the molecule is the same before and after
+    optimization."""
+    ac1 = rdmolops.GetAdjacencyMatrix(mol)
+    new_mol = ac2mol(atoms, opt_coords, charge, multiplicity, scr, sanitize=False)
+    ac2 = rdmolops.GetAdjacencyMatrix(new_mol)
+
+    if (ac1 == ac2).all():
+        return True, None
+    else:
+        logger.debug("Connectivity changed")
+        return False, ac2 - ac1
+
+
+def reorder_product_atoms(mol: Mol) -> Mol:
+    """Reorder product atom and bond indices to match reactant indices."""
+    # Collect (reactant_idx, product_idx) pairs
+    product2reactant = []
+    idx_counter = mol.GetNumAtoms()
+    for atom in mol.GetAtoms():
+        idx = atom.GetIdx()
+        if atom.HasProp("react_atom_idx"):
+            reactant_idx = atom.GetIntProp("react_atom_idx")
+        else:
+            reactant_idx = idx_counter
+            idx_counter += 1
+        product2reactant.append((idx, reactant_idx))
+
+    new_order = [idx for idx, _ in sorted(product2reactant, key=lambda x: x[1])]
+    renumbered = Chem.RenumberAtoms(mol, new_order)
+
+    for prop_name in mol.GetPropNames():
+        renumbered.SetProp(prop_name, mol.GetProp(prop_name))
+
+    for conf in mol.GetConformers():
+        for prop_name in conf.GetPropNames():
+            renumbered.GetConformer(conf.GetId()).SetProp(
+                prop_name, conf.GetProp(prop_name)
+            )
+
+    for old_idx, new_idx in enumerate(new_order):
+        old_atom = mol.GetAtomWithIdx(old_idx)
+        new_atom = renumbered.GetAtomWithIdx(new_idx)
+        for prop_name in old_atom.GetPropNames():
+            new_atom.SetProp(prop_name, old_atom.GetProp(prop_name))
+
+    for bond in mol.GetBonds():
+        old_begin = bond.GetBeginAtomIdx()
+        old_end = bond.GetEndAtomIdx()
+        new_begin = new_order.index(old_begin)
+        new_end = new_order.index(old_end)
+
+        new_bond = renumbered.GetBondBetweenAtoms(new_begin, new_end)
+        if new_bond is not None:
+            for prop_name in bond.GetPropNames():
+                new_bond.SetProp(prop_name, bond.GetProp(prop_name))
+
+    return renumbered
 
 
 class EnsembleCluster:
@@ -415,6 +681,32 @@ def filter_conformers(
     return new_mol
 
 
+def energy_filter_conformer(mol: Mol, cutoff_kcalmol: float = 5.0) -> Mol:
+    """Only retain conformers with energy within `cutoff_kcalmol` of lowest energy conformer.
+    Requires conformers to have 'electronic_energy' property set."""
+    # make sure conformers are sorted by energy
+    cIds = [conf.GetId() for conf in mol.GetConformers()]
+    energies = [conf.GetDoubleProp("electronic_energy") for conf in mol.GetConformers()]
+    relative_energies = [
+        hartree2kcalmol(e - min(energies)) for e in energies
+    ]  # convert to kcal/mol
+    # sort conformers by energy
+    sorted_cIds = [x for _, x in sorted(zip(relative_energies, cIds))]
+    sorted_energies = sorted(relative_energies)
+    new_mol = Chem.Mol(mol)
+    new_mol.RemoveAllConformers()
+    for cId, energy in zip(sorted_cIds, sorted_energies):
+        if energy <= cutoff_kcalmol:
+            conf = mol.GetConformer(cId)
+            new_conf = Chem.Conformer(mol.GetNumAtoms())
+            new_conf.SetDoubleProp(
+                "electronic_energy", conf.GetDoubleProp("electronic_energy")
+            )
+            new_conf.SetPositions(conf.GetPositions())
+            new_mol.AddConformer(new_conf, assignId=True)
+    return new_mol
+
+
 def get_atom_map(mol1, mol2):
     """Get mapping between atom indices based on connectivity ! Mappings are
     not unique due to symmetry!
@@ -533,7 +825,7 @@ def ac2mol(
     multiplicity: int = 1,
     scr: str = ".",
     perceive_connectivity: bool = True,
-    use_xtb: bool = False,
+    use_xtb: bool = True,
     sanitize: bool = False,
 ):
     """Converts atom symbols and coordinates to RDKit molecule."""
@@ -541,8 +833,6 @@ def ac2mol(
     rdkit_mol = Chem.MolFromXYZBlock(xyz)
     if sanitize:
         Chem.SanitizeMol(rdkit_mol)
-    if charge != 0:
-        rdkit_mol.GetAtomWithIdx(0).SetFormalCharge(charge)
     if perceive_connectivity:
         rdkit_mol = _determineConnectivity(
             rdkit_mol, usextb=use_xtb, charge=charge, multiplicity=multiplicity, scr=scr

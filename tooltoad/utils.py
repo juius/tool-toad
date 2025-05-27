@@ -32,9 +32,9 @@ def stream(
     ) as process:
         try:
             for line in iter(process.stdout.readline, ""):
-                yield line.strip()
+                yield line
             for line in iter(process.stderr.readline, ""):
-                yield line.strip()
+                yield line
         except KeyboardInterrupt:
             print("\nCtrl+C pressed. Terminating the process...")
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)

@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -15,7 +16,7 @@ from tooltoad.utils import (
     stream,
 )
 
-_logger = logging.getLogger("xtb")
+_logger = logging.getLogger(__name__)
 
 
 def xtb_calculate(
@@ -33,6 +34,7 @@ def xtb_calculate(
     force: bool = False,
     data2file: None | dict = None,
 ) -> dict:
+    _logger.info("still")
     """Run xTB calculation.
 
     Args:
@@ -85,7 +87,7 @@ def xtb_calculate(
         with open(fpath, "w") as inp:
             inp.write(detailed_input_str)
         cmd += f"--input {fpath.name} "
-
+    _logger.debug(f"Running xTB with command: {cmd}")
     lines = run_xtb((cmd, xyz_file))
     results = normal_termination(lines)
     if not results["normal_termination"] and not force:
@@ -131,6 +133,10 @@ def xtb_calculate(
             results["scan"] = read_scan(work_dir / "xtbscan.log")
         if "wall" in detailed_input_str and "sphere" in detailed_input_str:
             results["cavity_radius"] = read_cavity_radius(lines)
+    if "json" in options:
+        with open(work_dir / "xtbout.json", "r") as f:
+            json_data = json.load(f)
+        results["json"] = json_data
     if calc_dir:
         results["calc_dir"] = str(work_dir)
     else:

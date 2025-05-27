@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from tooltoad.chemutils import hartree2kcalmol, read_multi_xyz, xyz2ac
 from tooltoad.utils import WorkingDir, check_executable, stream
 
-_logger = logging.getLogger("orca")
+_logger = logging.getLogger(__name__)
 
 # see https://www.orcasoftware.de/tutorials_orca/first_steps/parallel.html
 PARENT_DIR = Path(__file__).resolve().parent.parent
@@ -75,7 +75,6 @@ def orca_calculate(
     check_executable(orca_cmd)
     work_dir = WorkingDir(root=scr, name=calc_dir)
     os.environ["XTBPATH"] = str(work_dir)
-    print(os.getenv("XTBPATH"))
 
     if data2file:
         for filename, data in data2file.items():
@@ -102,20 +101,17 @@ end"""
                 n_cores=n_cores,
             )
         )
-
     if not log_file:
         log_file = "orca.out"
     # cmd = f'{set_env}; {orca_cmd} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
     cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp "--use-hwthread-cpus" | tee {log_file}"'
     _logger.debug(f"Running Orca as: {cmd}")
-
     # Run Orca, capture an log output
     generator = stream(cmd, cwd=str(work_dir))
     lines = []
     for line in generator:
         lines.append(line)
         _logger.debug(line.rstrip("\n"))
-
     # try copying savefiles
     if save_files:
         for f in save_files:
