@@ -34,7 +34,6 @@ def xtb_calculate(
     force: bool = False,
     data2file: None | dict = None,
 ) -> dict:
-    _logger.info("still")
     """Run xTB calculation.
 
     Args:
