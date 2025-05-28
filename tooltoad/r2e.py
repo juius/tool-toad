@@ -224,10 +224,18 @@ def generate_products_from_reactant(
             _logger.debug("No conformers generated")
             for i, k in enumerate(rdDistGeom.EmbedFailureCauses.names):
                 _logger.debug(k, ps.GetFailureCounts()[i])
-        mp = rdForceFieldHelpers.MMFFGetMoleculeProperties(product)
-        ff = rdForceFieldHelpers.MMFFGetMoleculeForceField(product, mp)
-        for i in freeze_ids:
-            ff.MMFFAddPositionConstraint(i, 0, 1.0e4)
+        if rdForceFieldHelpers.MMFFHasAllMoleculeParams(reactant3d):
+            mp = rdForceFieldHelpers.MMFFGetMoleculeProperties(product)
+            ff = rdForceFieldHelpers.MMFFGetMoleculeForceField(product, mp)
+            for i in freeze_ids:
+                ff.MMFFAddPositionConstraint(i, 0, 1.0e4)
+        elif rdForceFieldHelpers.UFFHasAllMoleculeParams(reactant3d):
+            ff = rdForceFieldHelpers.UFFGetMoleculeForceField(product)
+            for i in freeze_ids:
+                ff.UFFAddDistanceConstraint(i, 0, 1.0e4)
+        else:
+            raise ValueError("No force field available for optimization")
+
         _ = rdForceFieldHelpers.OptimizeMoleculeConfs(
             product, ff, numThreads=n_cores, maxIters=1000
         )
