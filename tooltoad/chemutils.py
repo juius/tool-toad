@@ -11,6 +11,7 @@ import networkx as nx
 import numpy as np
 from joblib import Parallel, delayed
 from rdkit import Chem
+from rdkit.Chem import AllChem  # noqa: F401
 from rdkit.Chem import (
     ResonanceMolSupplier,
     rdDetermineBonds,
