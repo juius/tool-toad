@@ -98,7 +98,6 @@ def xtb_calculate(
         else:
             work_dir.cleanup()
         return results
-
     # read results
     results = read_xtb_results(lines)
     if "hess" in options:
@@ -144,7 +143,6 @@ def xtb_calculate(
     time = datetime.now()
     results["time"] = time.strftime("%Y-%m-%d %H:%M:%S")
     results["timestamp"] = time.timestamp()
-
     return results
 
 
@@ -207,13 +205,18 @@ def run_xtb(args: tuple[str]) -> list[str]:
 
 
 def normal_termination(lines: list[str]) -> dict:
-    messages = {"normal_termination": True}
+    messages = {}
+    normal_termination = False
     warnings = []
     errors = []
 
     i = 0  # Index to track the current position in the list
     while i < len(lines):
         line = lines[i]
+        if "terminated normally" in line:
+            normal_termination = True
+        elif "normal termination" in line:
+            normal_termination = True
         if "[WARNING]" in line:
             while "###" not in line:
                 warnings.append(line)
@@ -235,6 +238,7 @@ def normal_termination(lines: list[str]) -> dict:
     if errors:
         messages["errors"] = errors
         messages["normal_termination"] = False
+    messages["normal_termination"] = normal_termination
     return messages
 
 

@@ -3,7 +3,7 @@
 ### Setup
 Requires
 * Python 3.10 or higher.
-* xTB installed and on your PATH (e.g. via Conda: `conda install -c conda-forge xtb`)
+* xTB >=6.7 installed and on your PATH (e.g. via Conda: `conda install -c conda-forge xtb`)
 * ORCA (optional, for r2SCAN-3c single‐point calculations)
 
 If using ORCA, set these environment variables before running:

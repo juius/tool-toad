@@ -360,13 +360,16 @@ def show_vibs(
 
 
 dopts = Chem.Draw.rdMolDraw2D.MolDrawOptions()
-dopts.prepareMolsForDrawing = True
-dopts.centreMoleculesBeforeDrawing = True
-dopts.drawMolsSameScale = True
-dopts.legendFontSize = 18
-dopts.minFontSize = 30
-dopts.padding = 0.05
-dopts.atomLabelFontSize = 40
+try:
+    dopts.legendFontSize = 18
+    dopts.minFontSize = 30
+    dopts.padding = 0.05
+    dopts.atomLabelFontSize = 40
+    dopts.drawMolsSameScale = True
+    dopts.centreMoleculesBeforeDrawing = True
+    dopts.prepareMolsForDrawing = True
+except AttributeError:
+    pass
 
 
 def drawMolInsert(

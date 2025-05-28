@@ -9,7 +9,6 @@ from typing import List
 
 import networkx as nx
 import numpy as np
-from hide_warnings import hide_warnings
 from joblib import Parallel, delayed
 from rdkit import Chem
 from rdkit.Chem import (
@@ -312,7 +311,6 @@ def same_connectivity(
     ac1 = rdmolops.GetAdjacencyMatrix(mol)
     new_mol = ac2mol(atoms, opt_coords, charge, multiplicity, scr, sanitize=False)
     ac2 = rdmolops.GetAdjacencyMatrix(new_mol)
-
     if (ac1 == ac2).all():
         return True, None
     else:
@@ -758,7 +756,7 @@ def determine_connectivity_xtb(mol: Chem.Mol) -> Chem.Mol:
     return emol.GetMol()
 
 
-@hide_warnings
+# @hide_warnings
 def _determineConnectivity(mol, usextb=False, **kwargs):
     """Determine bonds in molecule."""
     if usextb:

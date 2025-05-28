@@ -2,16 +2,6 @@ import argparse
 import logging
 
 import numpy as np
-from chemutils import (
-    ConformerCalculator,
-    Constraint,
-    MolCalculator,
-    canonicalize_solvent,
-    energy_filter_conformer,
-    filter_conformers,
-    hartree2kcalmol,
-    reorder_product_atoms,
-)
 from rdkit import Chem
 from rdkit.Chem import (
     rdChemReactions,
@@ -22,6 +12,16 @@ from rdkit.Chem import (
 from rdkit.Chem.rdchem import Bond, Mol
 from rdkit.Geometry import Point3D
 
+from tooltoad.chemutils import (
+    ConformerCalculator,
+    Constraint,
+    MolCalculator,
+    canonicalize_solvent,
+    energy_filter_conformer,
+    filter_conformers,
+    hartree2kcalmol,
+    reorder_product_atoms,
+)
 from tooltoad.orca import orca_calculate
 from tooltoad.xtb import xtb_calculate
 
@@ -102,16 +102,13 @@ def generate_reactant(
         _ = rdForceFieldHelpers.UFFOptimizeMoleculeConfs(reactant3d, numThreads=n_cores)
     else:
         raise ValueError("No force field available for optimization")
-
     reactant3d = filter_conformers(reactant3d, numThreads=n_cores, rmsdThreshold=0.1)
     xtb_ff = ConformerCalculator(
         xtb_calculate, {"opt": True, "gfn": "ff"} | xtb_options, scr="."
     )
-
     reactant3d, _ = xtb_ff(reactant3d, n_cores=n_cores)
     reactant3d = filter_conformers(reactant3d, numThreads=n_cores, rmsdThreshold=0.1)
     reactant3d = energy_filter_conformer(reactant3d, cutoff_kcalmol=5)
-
     xtb_gfn2 = ConformerCalculator(
         xtb_calculate, {"opt": True, "gfn": "2"} | xtb_options, scr="."
     )
@@ -364,9 +361,7 @@ if __name__ == "__main__":
     print(
         f"Running relative reaction energy calculations for {smi} with reaction {rxn_smarts} in {solvent if solvent else 'gas phase'}."
     )
-
     reactant3d = generate_reactant(smi, n_cores=n_cores)
-
     products = generate_products_from_reactant(
         reactant3d,
         rxn_smarts,
