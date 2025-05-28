@@ -42,11 +42,29 @@ pip install .
 
 
 ```bash
-python r2e/r2e.py --smi "O=C(C1=NN=C(Cl)C=C1)OC(C)(C)C" --only-xtb --rxn-smarts "[#7:1]>>[#7+:1]-[O-]" --solvent "dcm"
+python r2e.py --smi "O=C(C1=NN=C(Cl)C=C1)OC(C)(C)C" --only-xtb --rxn-smarts "[#7:1]>>[#7+:1]-[O-]" --solvent "dcm"
+```
+
+The relative reaction energies for each reaction center (the atom with atomMapNum 1 in the reaction SMARTS) are returned:
+
+```
+Running relative reaction energy calculations for O=C(C1=NN=C(Cl)C=C1)OC(C)(C)C with reaction [#7:1]>>[#7+:1]-[O-] in dcm.
+
+Relative reaction energies (reaction site: energy):
+3: 0.00 kcal/mol
+4: 2.36 kcal/mol
 ```
 
 #### Epoxidation
 
 ```bash
-python r2e/r2e.py --smi "CC12CCC3C(CCC4=CC(=O)C=CC43O)C1CCC2O " --only-xtb --rxn-smarts '[C:1]([*:10])([*:11])=,:[C:2]([*:12])([*:13])>>[*;!a:1]1([*:10])([*:11])[*;!a:2]([*:12])([*:13])[#8]1' --solvent "water"
+python r2e.py --smi "CC12CCC3C(CCC4=CC(=O)C=CC43O)C1CCC2O" --only-xtb --rxn-smarts '[C:1]([*:10])([*:11])=,:[C:2]([*:12])([*:13])>>[*;!a:1]1([*:10])([*:11])[*;!a:2]([*:12])([*:13])[#8]1' --solvent "water"
+```
+
+```
+Running relative reaction energy calculations for CC12CCC3C(CCC4=CC(=O)C=CC43O)C1CCC2O with reaction [C:1]([*:10])([*:11])=,:[C:2]([*:12])([*:13])>>[*;!a:1]1([*:10])([*:11])[*;!a:2]([*:12])([*:13])[#8]1 in water.
+
+Relative reaction energies (reaction site: energy):
+8: 9.02 kcal/mol
+12: 0.00 kcal/mol
 ```
