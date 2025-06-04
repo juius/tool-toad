@@ -120,7 +120,7 @@ def xtb_calculate(
     if "ohess" in options:
         results.update(read_thermodynamics(lines))
         results["opt_coords"] = read_opt_structure(lines)[-1]
-    if any(s in options for s in ["md", "metadyn"]):
+    if any(s in options for s in ["md", "metadyn", "omd"]):
         results["traj"] = read_meta_md(work_dir / "xtb.trj")
         results.update(md_normal_termination(lines))
         results.update(read_mdrestart(work_dir / "mdrestart"))
@@ -215,7 +215,9 @@ def normal_termination(lines: list[str]) -> dict:
         line = lines[i]
         if "terminated normally" in line:
             normal_termination = True
-        elif "normal termination" in line:
+        if "normal termination" in line:
+            normal_termination = True
+        if "created    .xtboptok" in line:
             normal_termination = True
         if "[WARNING]" in line:
             while "###" not in line:

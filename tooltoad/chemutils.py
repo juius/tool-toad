@@ -117,13 +117,20 @@ class ConformerCalculator:
 
     qm_functions = ["xtb_calculate", "orca_calculate"]
 
-    def __init__(self, qm_function, options: dict, scr: str = "."):
+    def __init__(
+        self,
+        qm_function,
+        options: dict,
+        scr: str = ".",
+        check_connectivity: bool = True,
+    ):
         assert (
             qm_function.__name__ in self.qm_functions
         ), f"QM function {qm_function} not supported."
         self.qm_function = qm_function
         self.options = options
         self.scr = scr
+        self.check_connectivity = check_connectivity
 
     def __call__(
         self,
@@ -132,6 +139,7 @@ class ConformerCalculator:
         n_cores: int = 1,
         memory: int = 4,
         constraints: None | list[Constraint] = None,
+        xtb_detailed_input_str: None | str = None,
     ):
         atoms = [a.GetSymbol() for a in mol.GetAtoms()]
         coords = [conf.GetPositions() for conf in mol.GetConformers()]
@@ -159,6 +167,8 @@ $end"""
       end"""
             else:
                 raise ValueError("QM function not supported")
+        if xtb_detailed_input_str:
+            kwargs["detailed_input_str"] += xtb_detailed_input_str
         results = Parallel(n_jobs=n_cores)(
             delayed(self.qm_function)(
                 atoms=atoms,
@@ -187,21 +197,22 @@ $end"""
             else:
                 if "opt" in self.options:
                     coords = result["opt_coords"]
-                    # check for change in connectivity
-                    connectivity_check, ac_diff = same_connectivity(
-                        mol,
-                        atoms,
-                        result["opt_coords"],
-                        charge,
-                        multiplicity,
-                        self.scr,
-                    )
-                    if not connectivity_check:
-                        ac_diffs.append(ac_diff)
-                        logger.debug(
-                            "Change in connectivity during optimization, skipping conformer."
+                    if self.check_connectivity:
+                        # check for change in connectivity
+                        connectivity_check, ac_diff = same_connectivity(
+                            mol,
+                            atoms,
+                            result["opt_coords"],
+                            charge,
+                            multiplicity,
+                            self.scr,
                         )
-                        continue
+                        if not connectivity_check:
+                            ac_diffs.append(ac_diff)
+                            logger.debug(
+                                "Change in connectivity during optimization, skipping conformer."
+                            )
+                            continue
                 else:
                     coords = result["coords"]
                 conf = Chem.Conformer(mol.GetNumAtoms())
@@ -219,7 +230,12 @@ class MolCalculator:
 
     qm_functions = ["xtb_calculate", "orca_calculate"]
 
-    def __init__(self, qm_function: str, options: dict, scr: str = "."):
+    def __init__(
+        self,
+        qm_function: str,
+        options: dict,
+        scr: str = ".",
+    ):
         assert (
             qm_function.__name__ in self.qm_functions
         ), f"QM function {qm_function} not supported."
@@ -233,6 +249,7 @@ class MolCalculator:
         multiplicities: list[int] = None,
         n_cores: int = 1,
         memory: int = 4,
+        xtb_detailed_input_str: None | str = None,
     ):
         dtype = "list"
         if isinstance(mols, dict):
