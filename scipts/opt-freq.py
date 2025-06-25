@@ -149,8 +149,7 @@ def optfreq(
         f"Running geometry optimization using {n_cores} cores and {memory} GB memory."
     )
     executor.update_parameters(
-        slurm_cpus_per_task=n_cores,
-        slurm_mem_gb=memory,
+        slurm_cpus_per_task=n_cores, slurm_mem_gb=memory, job_name=f"{name}-opt"
     )
     job = executor.submit(
         optimize,
@@ -178,8 +177,7 @@ def optfreq(
         f"Running frequency calculation using {n_cores} cores and {memory_freq} GB memory."
     )
     executor.update_parameters(
-        slurm_cpus_per_task=n_cores,
-        slurm_mem_gb=memory_freq,
+        slurm_cpus_per_task=n_cores, slurm_mem_gb=memory_freq, job_name=f"{name}-freq"
     )
     job = executor.submit(
         frequencies,
@@ -204,8 +202,7 @@ def optfreq(
         "l1_gibbs-correction", freq["gibbs_energy"] - freq["electronic_energy"]
     )
     executor.update_parameters(
-        slurm_cpus_per_task=n_cores,
-        slurm_mem_gb=memory,
+        slurm_cpus_per_task=n_cores, slurm_mem_gb=memory, job_name=f"{name}-sp"
     )
     click.echo(
         f"Running single point calculation using {n_cores} cores and {memory} GB memory."
@@ -238,6 +235,8 @@ def optfreq(
 
     with Chem.SDWriter((data_dir / (str(name) + f"-{level}.sdf")).absolute()) as writer:
         writer.write(mol)
+
+    return mol
 
 
 if __name__ == "__main__":
