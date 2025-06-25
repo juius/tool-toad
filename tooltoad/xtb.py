@@ -526,7 +526,7 @@ class MetaDynOptions(BaseOptions):
     kpush: float = 0.075
     alp: float = 0.3
     coord: None | str = None
-    atoms: None | list[int] = None
+    atoms: None | str = None  # must be formatted as "1,2,3" or "1-3,5"
     # undocumented options
     # https://github.com/grimme-lab/xtb/blob/main/src/set_module.f90#L2541
     static: None | bool = False
