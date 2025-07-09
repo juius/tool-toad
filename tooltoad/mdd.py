@@ -386,6 +386,8 @@ def md_step(
         process,
         traj_file=str((xyz_file.parent / "xtb.trj").absolute()),
         init_smiles=init_smiles,
+        charge=charge,
+        multiplicity=multiplicity,
         max_products=max_products,
         frame_interval=frame_interval,
         num_workers=n_opt_cores,
