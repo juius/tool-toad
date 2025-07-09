@@ -227,6 +227,7 @@ def track_tajectory_v2(
                 "scoord."
             ):
                 filepath = Path(event.src_path)
+                time.sleep(2)  # Give some time for the file to be fully written
                 if filepath not in self.processed_files:
                     self.processed_files.add(filepath)
                     try:
@@ -234,8 +235,21 @@ def track_tajectory_v2(
                         _logger.info(
                             f"Running optimization for structure from {filepath}"
                         )
+                        _logger.info(f"content of scoord file: {filepath}")
+                        _logger.info(f"atoms: {atoms}")
+                        _logger.info(f"coords: {coords}")
+                        # Check if the number of atoms is consistent
+                        with open(filepath, "r") as f:
+                            lines = f.readlines()
+                        _logger.info(f"Number of lines in scoord file: {len(lines)}")
+                        _logger.info("".join(lines))
                         crude_opt = xtb_calculate(
-                            atoms, coords, charge, multiplicity, options=opt_options
+                            atoms,
+                            coords,
+                            charge,
+                            multiplicity,
+                            options=opt_options,
+                            scr=scr,
                         )
 
                         if crude_opt["normal_termination"]:
