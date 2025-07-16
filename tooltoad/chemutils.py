@@ -33,6 +33,7 @@ COVALENT_RADII = {
     "C": 0.76,
     "N": 0.71,
     "O": 0.66,
+    "F": 0.57,
 }
 
 
@@ -42,12 +43,21 @@ VDW_RADII = {
     "O": 1.52,
     "H": 1.2,
     "S": 1.8,
+    "F": 1.47,
     # Add more as needed
 }
 
 # convert solvent names to canonical names
 # at least in xtb 6.7.1 the DCM name doesn't work
 CANONICAL_SOLVENT_NAMES = {"xtb": {"dcm": "ch2cl2"}, "orca": {}}
+
+
+def canonicalize_resonance(mol):
+    try:
+        mol = ResonanceMolSupplier(mol).__next__()
+    except StopIteration:
+        pass
+    return mol
 
 
 def canonicalize_solvent(solvent: str, qm: str):
