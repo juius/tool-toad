@@ -5,10 +5,10 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from queue import Empty
 
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem import rdmolops
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -25,7 +25,7 @@ def scoords2coords(scoords_file):
     atoms = []
     coords = []
     for line in lines:
-        if line.startswith("$"):
+        if line.strip().startswith("$"):
             continue
         *cs, atom = line.split()
         atoms.append(atom)
@@ -34,103 +34,35 @@ def scoords2coords(scoords_file):
     return atoms, coords
 
 
-def process_scoord_files(
-    queue, opt_options, charge, multiplicity, init_smiles, result_queue
-):
-    # Set up logging in the child process
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-    _logger.addHandler(handler)
-    _logger.setLevel(logging.INFO)
+def is_small_ring_product(origin, product, max_size=4):
+    ac1 = rdmolops.GetAdjacencyMatrix(origin)
+    ac2 = rdmolops.GetAdjacencyMatrix(product)
+    diff = ac2 - ac1
 
-    _logger.info("Worker process started processing scoord files")
-    while True:
-        try:
-            filepath = queue.get(timeout=1)
-            _logger.info(f"Processing scoord file: {filepath}")
-            try:
-                atoms, coords = scoords2coords(filepath)
-                _logger.info(f"Running optimization for structure from {filepath}")
-                crude_opt = xtb_calculate(
-                    atoms, coords, charge, multiplicity, options=opt_options
-                )
-                if crude_opt["normal_termination"]:
-                    mol = ac2mol(
-                        crude_opt["atoms"], crude_opt["opt_coords"], use_xtb=True
-                    )
-                    smiles = Chem.MolToSmiles(mol)
-                    _logger.info(f"Initial SMILES: {init_smiles}")
-                    _logger.info(f"Current SMILES: {smiles}")
-                    if smiles != init_smiles:
-                        _logger.info("New SMILES found! Terminating processes...")
-                        crude_opt["smiles"] = smiles
-                        crude_opt["frame"] = Path(filepath).suffix
-                        result_queue.put(crude_opt)
-                        return
-                    else:
-                        _logger.info("SMILES unchanged, continuing...")
+    if np.abs(diff).sum() == 2:
+        # only one bond has formed
+        _logger.debug("Only one bond has formed, checking for small ring product")
+        Chem.SanitizeMol(origin, sanitizeOps=Chem.SanitizeFlags.SANITIZE_SYMMRINGS)
+        rinfo = origin.GetRingInfo()
 
-            except Exception as e:
-                _logger.error(f"Error processing {filepath}: {str(e)}")
-        except Empty:
-            continue
-        except Exception as e:
-            _logger.error(f"Unexpected error in worker process: {str(e)}")
-            return None
+        # are two atoms in the same ring
+        atom_rings = rinfo.AtomRings()
+        idx1, idx2 = [int(i) for i in np.where(diff == 1)[0]]
+        in_same_ring = any(idx1 in ring and idx2 in ring for ring in atom_rings)
+        _logger.debug(f"Bond between atom {idx1} and {idx2} is between ring atoms")
+        if in_same_ring:
+            # now get new bond in product
+            new_bond = product.GetBondBetweenAtoms(idx1, idx2)
 
-
-def process_structure(
-    scoord_file, init_smiles, charge, multiplicity, opt_options, xtb_process
-):
-    """Process a single structure and check if it's a new product."""
-    try:
-        atoms, coords = scoords2coords(scoord_file)
-        _logger.info(f"Running optimization for structure from {scoord_file}")
-        opt_options["opt"] = "crude"
-        crude_opt = xtb_calculate(
-            atoms, coords, charge, multiplicity, options=opt_options
-        )
-
-        if not crude_opt["normal_termination"]:
-            _logger.info("Abnormal xtb termination")
-            return None
-
-        mol = ac2mol(crude_opt["atoms"], crude_opt["opt_coords"], use_xtb=True)
-        smiles = Chem.MolToSmiles(mol)
-        _logger.info(f"Processed SMILES: {smiles}")
-
-        if smiles != init_smiles:
-            _logger.info(
-                f"New product found! Initial SMILES: {init_smiles}, New SMILES: {smiles}"
+            is_small_ring = any(
+                [new_bond.IsInRingSize(size) for size in range(3, max_size + 1)]
             )
-            crude_opt["smiles"] = smiles
-            # Terminate the xtb process and its children
-            try:
-                pgid = os.getpgid(xtb_process.pid)
-                os.killpg(pgid, signal.SIGTERM)
-                time.sleep(1)
-                if xtb_process.poll() is None:
-                    os.killpg(pgid, signal.SIGKILL)
-                xtb_process.terminate()
-                xtb_process.wait(timeout=5)
-            except ProcessLookupError:
-                pass
-            except subprocess.TimeoutExpired:
-                _logger.warning(
-                    "xTB process did not terminate gracefully, forcing kill"
+            if is_small_ring:
+                _logger.info(
+                    f"Detected small ring product between atoms {idx1} and {idx2} in a ring of size <= {max_size}"
                 )
-                xtb_process.kill()
-            _logger.info("xTB process terminated")
-            return crude_opt
-
-        _logger.info("SMILES unchanged, continuing...")
-        return None
-
-    except Exception as e:
-        _logger.error(f"Error processing {scoord_file}: {str(e)}")
-        return None
+                return True
+    return False
 
 
 def cleanup_processes(observer, executor, xtb_process):
@@ -196,6 +128,7 @@ def track_tajectory_v2(
     xtb_process,
     traj_file: str,
     init_smiles: str,
+    init_mol: Chem.Mol,
     max_products: None | int = None,
     charge: int = 0,
     multiplicity: int = 1,
@@ -204,6 +137,7 @@ def track_tajectory_v2(
     num_workers: int = 1,
     time_interval: int = 2,
     scr: str = ".",
+    allow_small_ring_products: bool = False,
 ):
     work_dir = Path(traj_file).parent
     _logger.info(f"Starting trajectory tracking in directory: {work_dir}")
@@ -218,8 +152,9 @@ def track_tajectory_v2(
     stop_event = threading.Event()
 
     class ScoordHandler(FileSystemEventHandler):
-        def __init__(self):
+        def __init__(self, allow_small_ring_products=allow_small_ring_products):
             self.processed_files = set()
+            self.allow_small_ring_products = allow_small_ring_products
 
         def on_created(self, event):
             nonlocal result
@@ -263,6 +198,16 @@ def track_tajectory_v2(
                             _logger.info(f"Current SMILES: {smiles}")
 
                             if smiles != init_smiles:
+                                if not self.allow_small_ring_products:
+                                    Chem.SanitizeMol(
+                                        mol,
+                                        sanitizeOps=Chem.SanitizeFlags.SANITIZE_SYMMRINGS,
+                                    )
+                                    if is_small_ring_product(init_mol, mol, max_size=4):
+                                        _logger.info(
+                                            "Small ring product detected, skipping..."
+                                        )
+                                        return
                                 _logger.info("New SMILES found! Terminating process...")
                                 crude_opt["smiles"] = smiles
                                 crude_opt["frame"] = Path(filepath).suffix.lstrip(".")
@@ -290,7 +235,7 @@ def track_tajectory_v2(
                         _logger.error(f"Error processing {filepath}: {e}")
 
     # Set up observer
-    event_handler = ScoordHandler()
+    event_handler = ScoordHandler(allow_small_ring_products=allow_small_ring_products)
     observer = Observer()
     observer.schedule(event_handler, str(work_dir), recursive=False)
     observer.start()
@@ -346,6 +291,7 @@ def md_step(
     xtb_cmd: str = "xtb",
     data2file: None | dict = None,
     save_traj: bool = False,
+    allow_small_ring_products: bool = False,
 ):
     options = options.copy()
     options["md"] = None
@@ -400,6 +346,7 @@ def md_step(
         process,
         traj_file=str((xyz_file.parent / "xtb.trj").absolute()),
         init_smiles=init_smiles,
+        init_mol=init_mol,
         charge=charge,
         multiplicity=multiplicity,
         max_products=max_products,
@@ -407,6 +354,7 @@ def md_step(
         num_workers=n_opt_cores,
         opt_options=opt_options,
         scr=scr,
+        allow_small_ring_products=allow_small_ring_products,
     )
 
     if save_traj:
