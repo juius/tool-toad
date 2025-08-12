@@ -52,6 +52,27 @@ VDW_RADII = {
 CANONICAL_SOLVENT_NAMES = {"xtb": {"dcm": "ch2cl2"}, "orca": {}}
 
 
+def get_bond_change(reactant, product):
+    # cleanup stereo and bond order
+    reactant = ac2mol(
+        [a.GetSymbol() for a in reactant.GetAtoms()],
+        reactant.GetConformer().GetPositions(),
+    )
+    product = ac2mol(
+        [a.GetSymbol() for a in product.GetAtoms()],
+        product.GetConformer().GetPositions(),
+    )
+    # get bond diff
+    ac1 = rdmolops.GetAdjacencyMatrix(reactant)
+    ac2 = rdmolops.GetAdjacencyMatrix(product)
+    diff = ac2 - ac1
+
+    pairs = list(zip(*np.where(np.triu(diff) != 0)))
+    bond_changes = [(diff[p], p) for p in pairs]
+
+    return bond_changes
+
+
 def canonicalize_resonance(mol):
     try:
         mol = ResonanceMolSupplier(mol).__next__()
