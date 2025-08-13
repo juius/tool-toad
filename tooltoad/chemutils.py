@@ -73,6 +73,32 @@ def get_bond_change(reactant, product):
     return bond_changes
 
 
+def get_connectivity_smiles(mol):
+    m = Chem.Mol(mol)
+    Chem.RemoveStereochemistry(m)
+    try:
+        Chem.Kekulize(m, clearAromaticFlags=True)
+    except Exception:
+        for a in m.GetAtoms():
+            a.SetIsAromatic(False)
+        for b in m.GetBonds():
+            b.SetIsAromatic(False)
+
+    for a in m.GetAtoms():
+        a.SetIsotope(0)
+        a.SetAtomMapNum(0)
+        a.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
+        a.SetIsAromatic(False)
+        a.SetFormalCharge(0)
+
+    for b in m.GetBonds():
+        b.SetBondType(Chem.BondType.SINGLE)
+        b.SetStereo(Chem.BondStereo.STEREONONE)
+        b.SetIsAromatic(False)
+
+    return Chem.MolToSmiles(m, canonical=True, isomericSmiles=False)
+
+
 def canonicalize_resonance(mol):
     try:
         mol = ResonanceMolSupplier(mol).__next__()
