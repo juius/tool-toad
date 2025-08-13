@@ -185,19 +185,35 @@ class PotentialEnergySurface:
         self.scan_value_tensor, detailed_strings = self._construct_xtb_scan(
             self.scan_coords, force_constant=force_constant, max_cycle=max_cycle
         )
-        with tqdm_joblib(tqdm(desc="1-dimensional scans", total=len(detailed_strings))):
-            results = Parallel(n_jobs=n_cores, prefer="threads")(
-                delayed(xtb_calculate)(
+        if len(self.scan_coords) == 1:
+            results = [
+                xtb_calculate(
                     atoms=self.atoms,
                     coords=self.coords,
                     charge=self.charge,
                     multiplicity=self.multiplicity,
                     options=xtb_options,
-                    detailed_input_str=s,
+                    detailed_input_str=detailed_strings[0],
                     scr=scr,
+                    n_cores=n_cores,
                 )
-                for s in detailed_strings
-            )
+            ]
+        else:
+            with tqdm_joblib(
+                tqdm(desc="1-dimensional scans", total=len(detailed_strings))
+            ):
+                results = Parallel(n_jobs=n_cores, prefer="threads")(
+                    delayed(xtb_calculate)(
+                        atoms=self.atoms,
+                        coords=self.coords,
+                        charge=self.charge,
+                        multiplicity=self.multiplicity,
+                        options=xtb_options,
+                        detailed_input_str=s,
+                        scr=scr,
+                    )
+                    for s in detailed_strings
+                )
 
         # construct results tensors
         pes_values = np.asarray(
