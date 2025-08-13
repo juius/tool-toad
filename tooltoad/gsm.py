@@ -42,13 +42,19 @@ NNODES                  {nnodes}      # including endpoints
 
 
 def create_isomers(bond_changes: list[tuple[int, tuple[int, int]]], parent_path="."):
-    """Create ISOMERS0001 file."""
-    change_types = {-1: "BREAK", 1: "ADD"}
+    """Create ISOMERS0000 file.
+
+    !!! GSM atom index starts at 1.
+    """
+    change_types = {
+        -1: "ADD",
+        1: "BREAK",
+    }  # reverse here bc we want to to the opposite of what happened in the adj diff
     content = "NEW\n"
     for change_type, (atom1, atom2) in bond_changes:
-        content += f"{change_types[change_type]} {atom1} {atom2}\n"
+        content += f"{change_types[change_type]} {atom1+1} {atom2+1}\n"
     content += "\n"
-    output_path = Path(parent_path) / "ISOMERS0001"
+    output_path = Path(parent_path) / "scratch/ISOMERS0000"
     with open(output_path, "w") as f:
         f.write(content)
     print(f"Created: {output_path}")
