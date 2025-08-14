@@ -39,7 +39,7 @@ def is_small_ring_product(origin, product, max_size=4):
     ac2 = rdmolops.GetAdjacencyMatrix(product)
     diff = ac2 - ac1
 
-    if np.abs(diff).sum() == 2:
+    if diff.sum() == 2 and np.abs(diff).sum() == 2:
         # only one bond has formed
         _logger.debug("Only one bond has formed, checking for small ring product")
         Chem.SanitizeMol(origin, sanitizeOps=Chem.SanitizeFlags.SANITIZE_SYMMRINGS)
