@@ -208,11 +208,22 @@ def track_tajectory_v2(
                                             "Small ring product detected, skipping..."
                                         )
                                         return
-                                _logger.info("New SMILES found! Terminating process...")
-                                crude_opt["smiles"] = smiles
-                                crude_opt["frame"] = Path(filepath).suffix.lstrip(".")
+                                _logger.info(
+                                    "New SMILES found! Final optimization and terminating process..."
+                                )
+                                opt_options["opt"] = None
+                                opt = xtb_calculate(
+                                    atoms,
+                                    crude_opt["opt_coords"],
+                                    charge,
+                                    multiplicity,
+                                    options=opt_options,
+                                    scr=scr,
+                                )
+                                opt["smiles"] = smiles
+                                opt["frame"] = Path(filepath).suffix.lstrip(".")
                                 with result_lock:
-                                    result = crude_opt
+                                    result = opt
                                 stop_event.set()
                                 # Terminate the xtb process
                                 try:
