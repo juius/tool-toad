@@ -1,7 +1,9 @@
-import argparse
 import os
-import sys
 from pathlib import Path
+from typing import List
+
+import typer
+from typing_extensions import Annotated
 
 
 def create_inpfileq(
@@ -41,18 +43,18 @@ NNODES                  {nnodes}      # including endpoints
     print(f"Created: {output_path}")
 
 
-def create_isomers(bond_changes: list[tuple[int, tuple[int, int]]], parent_path="."):
+def create_isomers(bond_changes: List[tuple[str, int, int]], parent_path="."):
     """Create ISOMERS0000 file.
 
     !!! GSM atom index starts at 1.
     """
     change_types = {
-        -1: "ADD",
-        1: "BREAK",
-    }  # reverse here bc we want to to the opposite of what happened in the adj diff
+        "ADD": "ADD",
+        "BREAK": "BREAK",
+    }
     content = "NEW\n"
-    for change_type, (atom1, atom2) in bond_changes:
-        content += f"{change_types[change_type]} {atom1+1} {atom2+1}\n"
+    for action, atom1, atom2 in bond_changes:
+        content += f"{change_types[action]} {atom1+1} {atom2+1}\n"
     content += "\n"
     output_path = Path(parent_path) / "scratch/ISOMERS0000"
     with open(output_path, "w") as f:
@@ -146,42 +148,6 @@ echo "Done with ORCA and fixed output. Output at: $outfile"
     print(f"Created: {output_path}")
 
 
-def create_slurm(
-    job_name="orcagsm",
-    ntasks=8,
-    walltime="3-00:00:00",
-    partition="kemi1",
-    gsm_exe="/groups/kemi/julius/gsmtest/gsm.orca",
-    parent_path=".",
-):
-    """Create SLURM submission script."""
-    content = f"""#!/bin/bash
-#SBATCH --array=1
-#SBATCH --job-name={job_name}
-#SBATCH --time={walltime}
-#SBATCH --nodes=1
-#SBATCH --ntasks={ntasks}
-#SBATCH --mem-per-cpu=4G
-#SBATCH -o orca.output
-#SBATCH -e orca.error
-#SBATCH -p {partition}
-
-item=$SLURM_ARRAY_TASK_ID
-ID=`printf "%0*d\\n" 4 ${{item}}`
-
-export PATH=/groups/kemi/julius/orca_6_1_0:/software/kemi/openmpi/openmpi-4.1.1/bin:$PATH
-export LD_LIBRARY_PATH=/software/kemi/openmpi/openmpi-4.1.1/lib:$LD_LIBRARY_PATH
-export OMP_NUM_THREADS=1
-
-{gsm_exe} ${{item}} {ntasks} > scratch/paragsm$ID
-"""
-    output_path = Path(parent_path) / "submit.sh"
-    with open(output_path, "w") as f:
-        f.write(content)
-    os.chmod(output_path, 0o755)
-    print(f"Created: {output_path}")
-
-
 def create_scratch_dir(xyz_file=None, parent_path="."):
     """Create scratch directory."""
     scratch_path = Path(parent_path) / "scratch"
@@ -189,12 +155,12 @@ def create_scratch_dir(xyz_file=None, parent_path="."):
     if xyz_file and Path(xyz_file).exists():
         import shutil
 
-        shutil.copy2(xyz_file, scratch_path / "input.xyz")
-        print(f"Copied {xyz_file} to {scratch_path / 'input.xyz'}")
+        shutil.copy2(xyz_file, scratch_path / "initial0000.xyz")
+        print(f"Copied {xyz_file} to {scratch_path / 'initial0000.xyz'}")
     print(f"Created: {scratch_path}/")
 
 
-def parse_bond_changes(bond_args):
+def parse_bond_changes(bond_args: List[str]) -> List[tuple[str, int, int]]:
     """Parse bond change arguments from command line.
 
     Args:
@@ -221,136 +187,108 @@ def parse_bond_changes(bond_args):
             bond_changes.append((action, atom1, atom2))
 
         except (ValueError, IndexError) as e:
-            print(f"Error parsing bond change '{bond_arg}': {e}")
-            sys.exit(1)
+            typer.echo(f"Error parsing bond change '{bond_arg}': {e}", err=True)
+            raise typer.Exit(1)
 
     return bond_changes
 
 
-def main():
-    """CLI main function."""
-    parser = argparse.ArgumentParser(
-        description="Generate GSM (Growing String Method) input files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s -o output_dir -b ADD:6:4 -b BREAK:5:1
-  %(prog)s -o test_run -n MyGSM -b ADD:1:2 -b ADD:3:4 -x input.xyz
-  %(prog)s -o . -b ADD:6:4  # Single bond addition
-        """,
-    )
+# Create Typer app
+app = typer.Typer(
+    help="Generate GSM (Growing String Method) input files",
+    epilog="Examples:\n"
+    "  gsm ssm input.xyz ADD:6:4 BREAK:5:1 -o output_dir\n"
+    "  gsm ssm molecule.xyz ADD:1:2 ADD:3:4 -n MySSM\n"
+    "  gsm gsm input.xyz ADD:1:2  # (not implemented yet)",
+)
 
-    # Required arguments
-    parser.add_argument(
-        "-o", "--output", required=True, help="Output directory for GSM files"
-    )
 
-    parser.add_argument(
-        "-b",
-        "--bonds",
-        action="append",
-        required=True,
-        help="Bond changes in format ACTION:ATOM1:ATOM2 (e.g., ADD:6:4, BREAK:5:1). Can be used multiple times.",
-    )
+@app.command()
+def ssm(
+    xyz_file: Annotated[Path, typer.Argument(help="Initial XYZ file path")],
+    bond_changes: Annotated[
+        List[str],
+        typer.Argument(
+            help="Bond changes in format ACTION:ATOM1:ATOM2 (e.g., ADD:6:4 BREAK:5:1)"
+        ),
+    ],
+    output: Annotated[
+        Path, typer.Option("-o", "--output", help="Output directory for SSM files")
+    ] = Path("."),
+    name: Annotated[str, typer.Option("-n", "--name", help="Run name")] = "SSM_run",
+    nodes: Annotated[
+        int, typer.Option("--nodes", help="Number of nodes including endpoints")
+    ] = 20,
+    method: Annotated[
+        str, typer.Option("--method", help="ORCA method string")
+    ] = "XTB2",
+    orca_path: Annotated[
+        str, typer.Option("--orca-path", help="Path to ORCA executable")
+    ] = "/groups/kemi/julius/orca_6_1_0/orca",
+    charge: Annotated[int, typer.Option("--charge", help="Molecular charge")] = 0,
+    multiplicity: Annotated[
+        int, typer.Option("--multiplicity", help="Spin multiplicity")
+    ] = 1,
+):
+    """Generate SSM (Single-Ended String Method) input files."""
+    if not xyz_file.exists():
+        typer.echo(f"Error: XYZ file '{xyz_file}' does not exist", err=True)
+        raise typer.Exit(1)
 
-    # Optional arguments
-    parser.add_argument(
-        "-n", "--name", default="GSM_run", help="Run name (default: GSM_run)"
-    )
+    if not bond_changes:
+        typer.echo(
+            "Error: At least one bond change must be specified",
+            err=True,
+        )
+        raise typer.Exit(1)
 
-    parser.add_argument("-x", "--xyz", help="Initial XYZ file path")
-
-    parser.add_argument(
-        "-t",
-        "--type",
-        choices=["SSM", "FSM", "GSM"],
-        default="SSM",
-        help="String method type (default: SSM)",
-    )
-
-    parser.add_argument(
-        "--nodes",
-        type=int,
-        default=20,
-        help="Number of nodes including endpoints (default: 20)",
-    )
-
-    parser.add_argument(
-        "--ntasks", type=int, default=8, help="Number of SLURM tasks (default: 8)"
-    )
-
-    parser.add_argument(
-        "--walltime", default="3-00:00:00", help="SLURM walltime (default: 3-00:00:00)"
-    )
-
-    parser.add_argument(
-        "--partition", default="kemi1", help="SLURM partition (default: kemi1)"
-    )
-
-    parser.add_argument(
-        "--method", default="XTB2", help="ORCA method (default: DFT B3LYP)"
-    )
-
-    parser.add_argument(
-        "--charge", type=int, default=0, help="Molecular charge (default: 0)"
-    )
-
-    parser.add_argument(
-        "--multiplicity", type=int, default=1, help="Spin multiplicity (default: 1)"
-    )
-
-    args = parser.parse_args()
-
-    # Parse bond changes
-    bond_changes = parse_bond_changes(args.bonds)
+    parsed_bond_changes = parse_bond_changes(bond_changes)
 
     # Create output directory
-    output_path = Path(args.output)
-    output_path.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
 
-    print(f"=== Creating GSM files in {output_path} ===")
-    print(f"Run name: {args.name}")
-    print(f"Bond changes: {bond_changes}")
+    typer.echo(f"=== Creating SSM files in {output} ===")
+    typer.echo(f"Run name: {name}")
+    typer.echo(f"XYZ file: {xyz_file}")
+    typer.echo(f"Bond changes: {parsed_bond_changes}")
 
-    # Create all files
+    create_scratch_dir(str(xyz_file), parent_path=str(output))
+
     create_inpfileq(
-        run_name=args.name,
-        sm_type=args.type,
-        nnodes=args.nodes,
-        parent_path=args.output,
+        run_name=name,
+        sm_type="SSM",
+        nnodes=nodes,
+        bond_delta=True,
+        parent_path=str(output),
     )
 
-    create_isomers(bond_changes, parent_path=args.output)
+    create_isomers(parsed_bond_changes, parent_path=str(output))
 
     create_ograd(
-        method=args.method,
-        charge=args.charge,
-        multiplicity=args.multiplicity,
-        parent_path=args.output,
+        orca_option_string=method,
+        orca_path=orca_path,
+        charge=charge,
+        multiplicity=multiplicity,
+        parent_path=str(output),
     )
 
-    create_slurm(
-        job_name=f"orcagsm_{args.name}",
-        ntasks=args.ntasks,
-        walltime=args.walltime,
-        partition=args.partition,
-        parent_path=args.output,
+    typer.echo("\n=== Done! ===")
+    typer.echo("Files created:")
+    typer.echo(f"  - {output / 'inpfileq'}")
+    typer.echo(f"  - {output / 'scratch/ISOMERS0000'}")
+    typer.echo(f"  - {output / 'ograd'}")
+    typer.echo(f"  - {output / 'scratch'}/")
+    typer.echo(f"  - {output / 'scratch' / 'initial0000.xyz'}")
+    typer.echo("\nReady to run SSM calculations!")
+
+
+@app.command()
+def gsm():
+    raise NotImplementedError(
+        "GSM (Growing String Method) is not yet implemented. "
+        "Please use the SSM command for Single-Ended String Method."
     )
-
-    create_scratch_dir(args.xyz, parent_path=args.output)
-
-    print("\n=== Done! ===")
-    print("Files created:")
-    print(f"  - {output_path / 'inpfileq'}")
-    print(f"  - {output_path / 'ISOMERS0001'}")
-    print(f"  - {output_path / 'ograd'}")
-    print(f"  - {output_path / 'submit.sh'}")
-    print(f"  - {output_path / 'scratch'}/")
-    if args.xyz:
-        print(f"  - {output_path / 'scratch' / 'input.xyz'}")
-
-    print(f"\nTo submit: cd {output_path} && sbatch submit.sh")
 
 
 if __name__ == "__main__":
-    main()
+    app()
