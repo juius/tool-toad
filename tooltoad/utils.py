@@ -138,3 +138,27 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
+
+
+def get_best_n_workers(n_tasks, n_cores, max_threads_per_task):
+    workers = min(n_tasks, n_cores)
+    threads = max(1, min(max_threads_per_task, n_cores // workers))
+    best = (workers, threads)
+    best_idle = n_cores - workers * threads
+
+    # try reducing workers to improve the division (fewer idle cores, more threads/job)
+    for w in range(workers, 0, -1):
+        t = max(1, min(max_threads_per_task, n_cores // w))
+        used = w * t
+        if used <= 0:
+            continue
+        idle = n_cores - used
+        # prefer fewer idle cores; if tie, prefer more threads/job; if still tie, more workers
+        score = (idle, -w, -t)
+        best_score = (best_idle, -best[1], -best[0])
+        if score < best_score:
+            best = (w, t)
+            best_idle = idle
+            if idle == 0:
+                break
+    return best
