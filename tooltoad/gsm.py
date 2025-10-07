@@ -22,7 +22,7 @@ SM_TYPE                 {sm_type}      # SSM, FSM or GSM
 RESTART                 0      # read restart.xyz
 MAX_OPT_ITERS           80     # maximum iterations
 STEP_OPT_ITERS          30     # for FSM/SSM
-CONV_TOL                0.0005 # perp grad
+CONV_TOL                0.0001 # perp grad
 ADD_NODE_TOL            0.1    # for GSM
 SCALING                 1.0    # for opt steps
 SSM_DQMAX               0.8    # add step size
@@ -49,11 +49,11 @@ def create_isomers(bond_changes: List[tuple[str, int, int]], parent_path="."):
     !!! GSM atom index starts at 1.
     """
     change_types = {
-        "ADD": "ADD",
-        "BREAK": "BREAK",
+        1: "ADD",
+        -1: "BREAK",
     }
     content = "NEW\n"
-    for action, atom1, atom2 in bond_changes:
+    for action, (atom1, atom2) in bond_changes:
         content += f"{change_types[action]} {atom1+1} {atom2+1}\n"
     content += "\n"
     output_path = Path(parent_path) / "scratch/ISOMERS0000"
@@ -81,7 +81,20 @@ outfile="$WORKDIR/orcain${{tag}}.out"
 export OMP_NUM_THREADS="$ncpu"
 
 # ORCA binary (assumes it's on PATH; otherwise set ORCA_BIN=/path/to/orca)
-ORCA_BIN={orca_path}
+ORCA_BIN=$(which orca)
+
+set -a
+source ~/opt/tooltoad/.env
+set +a
+
+ORCA_CMD="${{ORCA_EXE:-orca}}"
+OPEN_MPI_DIR="${{OPEN_MPI_DIR:-openmpi}}"
+OPEN_MPI_DIR="${{OPEN_MPI_DIR%/}}"   # strip trailing slash if present
+ORCA_DIR="$(dirname "$ORCA_CMD")"
+
+export PATH="${{ORCA_DIR}}:${{OPEN_MPI_DIR}}/bin:$PATH"
+export LD_LIBRARY_PATH="${{OPEN_MPI_DIR}}/lib:$LD_LIBRARY_PATH"
+export DYLD_LIBRARY_PATH="${{OPEN_MPI_DIR}}/lib:$DYLD_LIBRARY_PATH"
 
 # Detect standard XYZ: first line is an integer atom count
 first_line="$(head -n1 "$molfile" | tr -d '\\r')"
@@ -137,7 +150,6 @@ END {{
 echo "Done with ORCA and fixed output. Output at: $outfile"
 """.format(
         orca_option_string=orca_option_string,
-        orca_path=orca_path,
         charge=charge,
         multiplicity=multiplicity,
     )
