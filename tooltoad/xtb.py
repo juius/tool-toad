@@ -551,6 +551,11 @@ class SCCOptions(BaseOptions):
 
 
 if __name__ == "__main__":
+    import logging
+
+    logger = logging.getLogger("tooltoad.xtb")
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(logging.StreamHandler())
     atoms = ["C", "C", "C", "N", "C", "C", "N", "H", "H", "H", "H", "H", "H", "H"]
     coords = [
         [-0.150572945378, 1.06902383757551, 0.13369717980808],
@@ -570,7 +575,13 @@ if __name__ == "__main__":
     ]
 
     options = {"opt": True, "alpb": "methanol", "wbo": True, "pop": True}
-    results = xtb_calculate(atoms=atoms, coords=coords, charge=1, options=options)
+    results = xtb_calculate(
+        atoms=atoms,
+        coords=coords,
+        charge=1,
+        options=options,
+        scr=os.getenv("SCRATCH", "."),
+    )
 
     for key, value in results.items():
         print(key)
