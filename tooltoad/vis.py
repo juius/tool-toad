@@ -382,7 +382,7 @@ def show_vibs(
         )
     p.mapAtomProperties(propmap)
     p.vibrate(numFrames, amplitude, True)
-    p.animate({"loop": "backAndForth", "interval": 1, "reps": 0})
+    p.animate({"loop": "backAndForth", "interval": 1, "reps": 8})
     p.setStyle({"sphere": {"radius": 0.4}, "stick": {}})
     p.setBackgroundColor("0xeeeeee", int(~transparent))
     p.zoomTo()
