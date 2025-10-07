@@ -60,6 +60,7 @@ class ScanCoord:
         atom_ids: list[int],
         nsteps: int,
         bond_breaking: bool = False,
+        vdw_offset: float = 0.3,
     ):
         """Create a ScanCoord instance from the current position of atoms.
 
@@ -77,7 +78,7 @@ class ScanCoord:
         if len(atom_ids) == 2:
             start = np.linalg.norm(coords[atom_ids[0]] - coords[atom_ids[1]])
             data_dict = VDW_RADII if bond_breaking else COVALENT_RADII
-            end = sum(data_dict[atoms[i]] for i in atom_ids)
+            end = sum(data_dict[atoms[i]] for i in atom_ids) - vdw_offset
         else:
             raise NotImplementedError("Only distance scan is supported")
         return cls(atom_ids=atom_ids, start=start, end=end, nsteps=nsteps)
