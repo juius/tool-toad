@@ -46,6 +46,7 @@ def orca_calculate(
     save_files: list | None = None,
     save_dir: str | None = None,
     data2file: None | dict = None,
+    scr_envar: None | str = None,
 ) -> dict:
     """Runs ORCA calculation.
 
@@ -73,6 +74,8 @@ def orca_calculate(
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
     check_executable(orca_cmd)
+    if scr_envar:
+        scr = os.getenv(scr_envar, scr)
     work_dir = WorkingDir(root=scr, name=calc_dir)
     os.environ["XTBPATH"] = str(work_dir)
 
@@ -674,3 +677,160 @@ def get_orca_results(
         results["atoms"], results["opt_coords"] = results["opt_structure"]
 
     return results
+
+
+if __name__ == "__main__":
+    import submitit
+    import typer
+    from rdkit import Chem
+
+    from tooltoad.chemutils import canonicalize_solvent
+
+    app = typer.Typer()
+
+    PARTITION_NAME = "kemi1"
+
+    @app.command()
+    def opt(
+        input: str,
+        charge: int = 0,
+        save_dir: None | str = None,
+        solvent: None | str = "water",
+        n_cores: int = 4,
+        memory: int = 8,
+        remote: bool = False,
+    ):
+        result = _run(
+            input,
+            options={"r2scan-3c": None, "opt": None},
+            name="opt",
+            charge=charge,
+            save_dir=save_dir,
+            solvent=solvent,
+            n_cores=n_cores,
+            memory=memory,
+            remote=remote,
+        )
+        return result
+
+    @app.command()
+    def freq(
+        input: str,
+        charge: int = 0,
+        save_dir: None | str = None,
+        solvent: None | str = "water",
+        n_cores: int = 4,
+        memory: int = 8,
+        remote: bool = False,
+    ):
+        result = _run(
+            input,
+            options={"r2scan-3c": None, "freq": None},
+            name="freq",
+            charge=charge,
+            save_dir=save_dir,
+            solvent=solvent,
+            n_cores=n_cores,
+            memory=memory,
+            remote=remote,
+        )
+        return result
+
+    @app.command()
+    def sp(
+        input: str,
+        charge: int = 0,
+        save_dir: None | str = None,
+        solvent: None | str = "water",
+        n_cores: int = 4,
+        memory: int = 8,
+        remote: bool = False,
+    ):
+        result = _run(
+            input,
+            options={"wB97X-D4": None, "def2-QZVPPD": None},
+            name="sp",
+            charge=charge,
+            save_dir=save_dir,
+            solvent=solvent,
+            n_cores=n_cores,
+            memory=memory,
+            remote=remote,
+        )
+        return result
+
+    def _run(
+        input: str,
+        options: dict,
+        name: str,
+        charge: int = 0,
+        save_dir: None | str = None,
+        solvent: None | str = "water",
+        n_cores: int = 4,
+        memory: int = 8,
+        remote: bool = False,
+    ):
+        input_path = Path(input).resolve()
+        if input_path.is_file() and input_path.suffix == ".xyz":
+            mol = Chem.MolFromXYZFile(str(input_path))
+            save_dir = input_path.parent / name
+        elif input_path.is_dir():
+            input_file = input_path / "input.xyz"
+            save_dir = input_path.parent / name
+            if input_file.exists():
+                mol = Chem.MolFromXYZFile(str(input_file))
+            else:
+                raise FileNotFoundError(f"Cannot find input.xyz in {input_path}")
+        else:
+            raise FileNotFoundError(f"Cannot find {input_path}")
+        if save_dir is None:
+            save_dir = Path(input).resolve().parent / name
+        else:
+            save_dir = Path(save_dir).resolve()
+        if solvent:
+            solvent = canonicalize_solvent(solvent, "orca")
+            options["smd"] = solvent
+
+        atoms = [a.GetSymbol() for a in mol.GetAtoms()]
+        coords = mol.GetConformer().GetPositions()
+        if remote:
+            executor = submitit.AutoExecutor(folder=".logs")
+            executor.update_parameters(
+                mem_gb=memory,
+                cpus_per_task=n_cores,
+                gpus_per_node=0,
+                timeout_min=60 * 24,
+                slurm_partition=PARTITION_NAME,
+            )
+            executor.update_parameters(name=f"{name}-{save_dir.parent.name}")
+
+            job = executor.submit(
+                orca_calculate,
+                atoms,
+                coords,
+                charge=charge,
+                options=options,
+                n_cores=n_cores,
+                memory=memory,
+                save_dir=str(save_dir),
+                save_files=["input.inp", "input.xyz", "input.property.json"],
+                log_file=str(save_dir / "orca.out"),
+                scr_envar="SCRATCH",
+            )
+            print(f"Submitted job {job.job_id} to remote cluster.")
+            result = None
+        else:
+            result = orca_calculate(
+                atoms,
+                coords,
+                charge=charge,
+                options=options,
+                n_cores=n_cores,
+                memory=memory,
+                save_dir=str(save_dir),
+                save_files=["input.inp", "input.xyz", "input.property.json"],
+                log_file=str(save_dir / "orca.out"),
+            )
+        return result
+
+    app()
