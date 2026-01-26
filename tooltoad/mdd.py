@@ -58,7 +58,7 @@ def is_small_ring_product(origin, product, max_size=4):
                 [new_bond.IsInRingSize(size) for size in range(3, max_size + 1)]
             )
             if is_small_ring:
-                _logger.info(
+                _logger.debug(
                     f"Detected small ring product between atoms {idx1} and {idx2} in a ring of size <= {max_size}"
                 )
                 return True
@@ -71,11 +71,11 @@ def cleanup_processes(observer, executor, xtb_process):
         # Stop the observer first
         observer.stop()
         observer.join()
-        _logger.info("Observer stopped")
+        _logger.debug("Observer stopped")
 
         # Shutdown the thread pool
         executor.shutdown(wait=False)
-        _logger.info("Thread pool shutdown initiated")
+        _logger.debug("Thread pool shutdown initiated")
 
         # Terminate the xtb process and its children
         try:
@@ -105,7 +105,7 @@ def cleanup_processes(observer, executor, xtb_process):
                 xtb_process.wait(timeout=2)
         except Exception as e:
             _logger.error(f"Error terminating xTB process: {str(e)}")
-        _logger.info("xTB process terminated")
+        _logger.debug("xTB process terminated")
 
         # Clean up any remaining processes
         try:
@@ -119,7 +119,7 @@ def cleanup_processes(observer, executor, xtb_process):
             #     pass
         except Exception as e:
             _logger.error(f"Error cleaning up processes: {str(e)}")
-        _logger.info("All processes cleaned up")
+        _logger.debug("All processes cleaned up")
     except Exception as e:
         _logger.error(f"Error during cleanup: {str(e)}")
 
@@ -144,7 +144,7 @@ def track_tajectory_v2(
     _logger.info(f"Initial SMILES: {init_smiles}")
 
     opt_options["opt"] = "crude"
-    _logger.info(f"opt_options: {opt_options}")
+    _logger.debug(f"opt_options: {opt_options}")
 
     # Create a shared result variable
     result = None
@@ -167,17 +167,17 @@ def track_tajectory_v2(
                     self.processed_files.add(filepath)
                     try:
                         atoms, coords = scoords2coords(filepath)
-                        _logger.info(
+                        _logger.debug(
                             f"Running optimization for structure from {filepath}"
                         )
-                        _logger.info(f"content of scoord file: {filepath}")
-                        _logger.info(f"atoms: {atoms}")
-                        _logger.info(f"coords: {coords}")
+                        _logger.debug(f"content of scoord file: {filepath}")
+                        _logger.debug(f"atoms: {atoms}")
+                        _logger.debug(f"coords: {coords}")
                         # Check if the number of atoms is consistent
                         with open(filepath, "r") as f:
                             lines = f.readlines()
-                        _logger.info(f"Number of lines in scoord file: {len(lines)}")
-                        _logger.info("".join(lines))
+                        _logger.debug(f"Number of lines in scoord file: {len(lines)}")
+                        _logger.debug("".join(lines))
                         crude_opt = xtb_calculate(
                             atoms,
                             coords,
@@ -185,6 +185,7 @@ def track_tajectory_v2(
                             multiplicity,
                             options=opt_options,
                             scr=scr,
+                            # calc_dir=f"opt-{filepath.stem}",
                         )
 
                         if crude_opt["normal_termination"]:
@@ -194,8 +195,8 @@ def track_tajectory_v2(
                                 use_xtb=True,
                             )
                             smiles = Chem.MolToSmiles(mol)
-                            _logger.info(f"Initial SMILES: {init_smiles}")
-                            _logger.info(f"Current SMILES: {smiles}")
+                            _logger.debug(f"Initial SMILES: {init_smiles}")
+                            _logger.debug(f"Current SMILES: {smiles}")
 
                             if smiles != init_smiles:
                                 if not self.allow_small_ring_products:
@@ -204,7 +205,7 @@ def track_tajectory_v2(
                                         sanitizeOps=Chem.SanitizeFlags.SANITIZE_SYMMRINGS,
                                     )
                                     if is_small_ring_product(init_mol, mol, max_size=4):
-                                        _logger.info(
+                                        _logger.debug(
                                             "Small ring product detected, skipping..."
                                         )
                                         return
@@ -241,7 +242,7 @@ def track_tajectory_v2(
                                         "xTB process did not terminate gracefully, forcing kill"
                                     )
                                     xtb_process.kill()
-                                _logger.info("xTB process terminated")
+                                _logger.debug("xTB process terminated")
                     except Exception as e:
                         _logger.error(f"Error processing {filepath}: {e}")
 
@@ -250,13 +251,13 @@ def track_tajectory_v2(
     observer = Observer()
     observer.schedule(event_handler, str(work_dir), recursive=False)
     observer.start()
-    _logger.info("File system observer started")
+    _logger.debug("File system observer started")
 
     try:
         # Main monitoring loop
         while not stop_event.is_set():
             if xtb_process.poll() is not None:
-                _logger.info("MD run finished")
+                _logger.debug("MD run finished")
                 break
             time.sleep(0.1)
     except KeyboardInterrupt:
@@ -267,7 +268,7 @@ def track_tajectory_v2(
         # Cleanup
         observer.stop()
         observer.join()
-        _logger.info("Observer stopped")
+        _logger.debug("Observer stopped")
 
         try:
             xtb_process.terminate()
@@ -275,12 +276,12 @@ def track_tajectory_v2(
         except subprocess.TimeoutExpired:
             _logger.warning("xTB process did not terminate gracefully, forcing kill")
             xtb_process.kill()
-        _logger.info("xTB process terminated")
+        _logger.debug("xTB process terminated")
 
     # Return the result after cleanup
     with result_lock:
         if result is not None:
-            _logger.info("Returning result with new product")
+            _logger.debug("Returning result with new product")
             return result
         _logger.info("No new product found")
         return None
@@ -369,8 +370,9 @@ def md_step(
     )
 
     if save_traj:
-        traj = read_multi_xyz(str((xyz_file.parent / "xtb.trj").absolute()))
-        result["traj"] = traj
+        if result:
+            traj = read_multi_xyz(str((xyz_file.parent / "xtb.trj").absolute()))
+            result["traj"] = traj
 
     # cleanup calc dir
     if not calc_dir:
@@ -379,23 +381,24 @@ def md_step(
 
 
 if __name__ == "__main__":
-    atoms = ["N", "C", "C", "H", "H", "H", "H", "H", "H", "H"]
+    atoms = ["C", "C", "O", "C", "O", "H", "H", "H", "H", "H", "H"]
     coords = [
-        [-0.2577470988117524, 0.8838829383188083, -0.8275401594278511],
-        [-0.2973839315307961, 0.18801894294025928, 0.44958897759676597],
-        [0.5551310303425486, -1.0719018812590675, 0.37795118183108517],
-        [0.6944457068755073, 1.1620435600146073, -1.043225225779833],
-        [-0.8253498651802484, 1.7238103063235921, -0.7935680193355253],
-        [-1.3397283093410641, -0.08443617703404037, 0.6389978412023933],
-        [0.045652467786225295, 0.8117651474128725, 1.294316580848435],
-        [0.46770576806958214, -1.6405193020514737, 1.2996801209055018],
-        [1.6014333054162806, -0.8143243072840862, 0.22592242918279043],
-        [0.22776030452129656, -1.689056742105217, -0.4539184478476502],
+        [0.26568467572667, -0.27831940366627, -0.58143651098761],
+        [-0.90676450908047, -0.32898730272464, 0.40529475847352],
+        [-1.41568585464497, 0.94892865156221, 0.71497268931071],
+        [1.53863004278233, 0.2010662094895, 0.04239084574045],
+        [1.7850842514261, 0.21669083040265, 1.22221509606025],
+        [0.03092787573139, 0.35107225545984, -1.44096675309975],
+        [0.46739234513469, -1.28482111368172, -0.95677100925294],
+        [-0.5614602960097, -0.7422579795195, 1.35610875003709],
+        [-1.70335137587454, -0.96875298931832, 0.00696728511019],
+        [-1.79732444963634, 1.34360582009679, -0.08220691169635],
+        [2.29686729444485, 0.54177502189944, -0.68656823969562],
     ]
     inp_str = """$md
    temp=300
    time=10
-   dump=10.0000
+   dump=100.0000
    step=0.4000
    velo=false
    shake=0
@@ -406,7 +409,7 @@ if __name__ == "__main__":
 $end
 $metadyn
    save=100
-   kpush=0.1500
+   kpush=0.1000
    alp=0.3000
    static=false
 $end
@@ -422,24 +425,14 @@ $end
 $cma
 """
 
-    import submitit
-
-    executor = submitit.AutoExecutor(
-        folder=".tmp",
-    )
-    executor.update_parameters(
-        name="md",
-        cpus_per_task=2,
-        timeout_min=1200,
-        slurm_partition="kemi1",
-        slurm_mem_per_cpu=4000,
-        slurm_array_parallelism=100,
-    )
-
     _logger.addHandler(logging.StreamHandler())
     _logger.setLevel(logging.DEBUG)
     results = md_step(
-        atoms, coords, detailed_input_str=inp_str, n_opt_cores=4, calc_dir="mdd"
+        atoms,
+        coords,
+        detailed_input_str=inp_str,
+        n_opt_cores=4,
+        options={"alpb": "water", "etemp": 6000},
     )
 
     print(results)
