@@ -105,6 +105,7 @@ End"""
         log_file = "orca.out"
     # cmd = f'{set_env}; {orca_cmd} input.inp "--bind-to-core" | tee orca.out' # "--oversubscribe" "--use-hwthread-cpus"
     cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp "--use-hwthread-cpus" | tee {log_file}"'
+    # cmd = f'/bin/bash -c "{set_env} {orca_cmd} input.inp > {log_file}"'
     _logger.debug(f"Running Orca as: {cmd}")
     # Run Orca, capture an log output
     generator = stream(cmd, cwd=str(work_dir))

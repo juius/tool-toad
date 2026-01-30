@@ -113,7 +113,7 @@ def generate_reactant(
         xtb_calculate, {"opt": True, "gfn": "2"} | xtb_options, scr="."
     )
 
-    reactant3d, _ = xtb_gfn2(reactant3d, n_cores=n_cores)
+    reactant3d, change = xtb_gfn2(reactant3d, n_cores=n_cores)
     reactant3d = energy_filter_conformer(
         reactant3d, cutoff_kcalmol=0
     )  # only retain minimum energy structure

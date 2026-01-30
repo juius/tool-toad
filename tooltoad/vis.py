@@ -17,7 +17,31 @@ from scipy.interpolate import CubicSpline
 from tooltoad.chemutils import ac2mol, ac2xyz
 
 # load matplotlib style
-plt.style.use(os.path.dirname(__file__) + "/data/paper.mplstyle")
+plt.style.use(os.path.dirname(__file__) + "/data/jnj.mplstyle")
+import matplotlib.colors as mcolors
+
+mcolors.get_named_colors_mapping().update({
+    'jnj-red': "#eb1700",
+    'jnj-grey2': "#F1EFED",
+    'jnj-grey3': "#E8E6E3",
+    'jnj-grey4': "#D5CFC9",
+    'jnj-grey5': "#C1BBB3",
+    'jnj-grey6': "#A39992",
+    'jnj-grey7': "#81766F",
+    'jnj-grey8': "#564C47",
+    'jnj-orange1': '#fbe058',
+    'jnj-orange2': '#ff6017',
+    'jnj-orange3': '#9e0000',
+    'jnj-violet1': '#b19beb',
+    'jnj-violet2': '#8c3bbb',
+    'jnj-violet3': '#541980',
+    'jnj-blue1': '#69d0ff',
+    'jnj-blue2': '#0f68b2',
+    'jnj-blue3': '#004685',
+    'jnj-green1': '#53ce76',
+    'jnj-green2': '#328714',
+    'jnj-green3': '#3b5a0d',
+})
 PAPER = Path("/groups/kemi/julius/opt/tm-catalyst-paper/figures")
 
 

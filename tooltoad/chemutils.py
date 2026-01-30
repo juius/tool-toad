@@ -277,6 +277,8 @@ $end"""
                 conf.SetPositions(np.array(coords))
                 _ = new_mol.AddConformer(conf, assignId=True)
         if len(new_mol.GetConformers()) == 0:
+            # import pdb
+            # pdb.set_trace()
             logger.warning("No conformers found")
             return new_mol, ac_diffs
         return new_mol, None

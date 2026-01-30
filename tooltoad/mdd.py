@@ -170,14 +170,6 @@ def track_tajectory_v2(
                         _logger.debug(
                             f"Running optimization for structure from {filepath}"
                         )
-                        _logger.debug(f"content of scoord file: {filepath}")
-                        _logger.debug(f"atoms: {atoms}")
-                        _logger.debug(f"coords: {coords}")
-                        # Check if the number of atoms is consistent
-                        with open(filepath, "r") as f:
-                            lines = f.readlines()
-                        _logger.debug(f"Number of lines in scoord file: {len(lines)}")
-                        _logger.debug("".join(lines))
                         crude_opt = xtb_calculate(
                             atoms,
                             coords,
@@ -195,9 +187,6 @@ def track_tajectory_v2(
                                 use_xtb=True,
                             )
                             smiles = Chem.MolToSmiles(mol)
-                            _logger.debug(f"Initial SMILES: {init_smiles}")
-                            _logger.debug(f"Current SMILES: {smiles}")
-
                             if smiles != init_smiles:
                                 if not self.allow_small_ring_products:
                                     Chem.SanitizeMol(
@@ -212,6 +201,9 @@ def track_tajectory_v2(
                                 _logger.info(
                                     "New SMILES found! Final optimization and terminating process..."
                                 )
+                                _logger.info(f"Initial SMILES: {init_smiles}")
+                                _logger.info(f"Final SMILES: {smiles}")
+
                                 opt_options["opt"] = None
                                 opt = xtb_calculate(
                                     atoms,
@@ -242,7 +234,6 @@ def track_tajectory_v2(
                                         "xTB process did not terminate gracefully, forcing kill"
                                     )
                                     xtb_process.kill()
-                                _logger.debug("xTB process terminated")
                     except Exception as e:
                         _logger.error(f"Error processing {filepath}: {e}")
 
@@ -268,7 +259,6 @@ def track_tajectory_v2(
         # Cleanup
         observer.stop()
         observer.join()
-        _logger.debug("Observer stopped")
 
         try:
             xtb_process.terminate()
@@ -276,12 +266,10 @@ def track_tajectory_v2(
         except subprocess.TimeoutExpired:
             _logger.warning("xTB process did not terminate gracefully, forcing kill")
             xtb_process.kill()
-        _logger.debug("xTB process terminated")
 
     # Return the result after cleanup
     with result_lock:
         if result is not None:
-            _logger.debug("Returning result with new product")
             return result
         _logger.info("No new product found")
         return None
@@ -431,27 +419,9 @@ $cma
         atoms,
         coords,
         detailed_input_str=inp_str,
-        n_opt_cores=4,
+        n_opt_cores=1,
+        n_md_cores=8,
         options={"alpb": "water", "etemp": 6000},
     )
 
     print(results)
-
-    def wrap(*args, **kwrags):
-        print("got here")
-        print(args)
-        logger = logging.getLogger("mdd")
-        logger.setLevel(logging.DEBUG)
-        logger.addHandler(logging.StreamHandler())
-        logger1 = logging.getLogger("tooltoad.mdd")
-        logger1.setLevel(logging.DEBUG)
-        logger1.addHandler(logging.StreamHandler())
-        return md_step(*args, **kwrags)
-
-    # executor.submit(
-    #     wrap,
-    #     atoms,
-    #     coords,
-    #     detailed_input_str=inp_str,
-    #     n_opt_cores=4,
-    # )
