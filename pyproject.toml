@@ -20,7 +20,13 @@ dependencies = [
     "networkx",
     "scikit-learn",
     "rmsd",
+    "typer[all]",
+    "watchdog",
+    "pysym",
 ]
+
+[project.scripts]
+tooltoad = "tooltoad.__main__:main"
 
 [tool.setuptools]
 packages = ["tooltoad"]
