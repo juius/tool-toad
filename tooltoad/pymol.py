@@ -76,7 +76,38 @@ color orange, elem P and mol
 center mol
 zoom mol, buffer=2
 
+# Set selection mode to atoms (not molecules)
+set mouse_selection_mode, 0
+set seq_view, 0
+
 {dash_commands}
+
+# Custom shortcut: select two atoms, then press F1 to add a dashed bond
+python
+dash_count = [0]
+def add_dash():
+    # Get atoms in selection
+    atoms = cmd.get_model("sele").atom
+    if len(atoms) != 2:
+        print(f"Error: Select exactly 2 atoms (currently {{len(atoms)}} selected)")
+        return
+
+    # Create selections for each atom
+    name = f"dash_{{dash_count[0]}}"
+    idx1, idx2 = atoms[0].id, atoms[1].id
+    cmd.distance(name, f"mol and id {{idx1}}", f"mol and id {{idx2}}")
+    cmd.hide("labels", name)
+    cmd.set("dash_gap", 0.15, name)
+    cmd.set("dash_length", 0.15, name)
+    cmd.set("dash_radius", 0.03, name)
+    cmd.color("gray50", name)
+    cmd.deselect()
+    dash_count[0] += 1
+    print(f"Added {{name}} between atoms {{idx1}} and {{idx2}}")
+
+cmd.extend("add_dash", add_dash)
+cmd.set_key("F1", add_dash)
+python end
 """
 
     # Write script and open PyMOL
