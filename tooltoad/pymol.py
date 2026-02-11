@@ -2,7 +2,153 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import numpy as np
 from rdkit import Chem
+
+
+def render_normal_mode(
+    mol,
+    normal_modes,
+    mode_index=0,
+    output=None,
+    amplitude=0.3,
+    n_frames=20,
+    fps=30,
+    gui=False,
+    width=800,
+    height=600,
+):
+    """Visualize a vibrational normal mode as an oscillating animation.
+
+    Args:
+        mol: RDKit molecule with 3D coordinates
+        normal_modes: Normal mode displacements, shape (NModes, Natoms, 3)
+        mode_index: Which mode to visualize (0-indexed)
+        output: Output GIF path. If None and gui=False, saves to temp file.
+        amplitude: Maximum displacement amplitude in Angstroms (default 0.3)
+        n_frames: Frames per half-oscillation (total frames = 2*n_frames)
+        fps: Animation frames per second (default 30)
+        gui: If True, open PyMOL GUI for interactive viewing
+        width: Image width in pixels (for GIF export)
+        height: Image height in pixels (for GIF export)
+
+    Returns:
+        Path to output GIF (if gui=False), None otherwise.
+    """
+    normal_modes = np.asarray(normal_modes)
+    mode = normal_modes[mode_index]
+
+    # Normalize mode vector and scale by amplitude
+    norm = np.linalg.norm(mode)
+    if norm > 0:
+        mode = mode / norm * amplitude
+
+    # Get equilibrium coordinates
+    conf = mol.GetConformer()
+    n_atoms = mol.GetNumAtoms()
+    coords = np.array(
+        [
+            [
+                conf.GetAtomPosition(i).x,
+                conf.GetAtomPosition(i).y,
+                conf.GetAtomPosition(i).z,
+            ]
+            for i in range(n_atoms)
+        ]
+    )
+
+    # Generate oscillating frames (full cycle: 0 → +amp → 0 → -amp → 0)
+    frames = []
+    total_frames = 2 * n_frames
+    for i in range(total_frames):
+        phase = 2 * np.pi * i / total_frames
+        displaced = coords + mode * np.sin(phase)
+        frames.append(displaced)
+
+    # Write multi-state XYZ file
+    xyz_content = _write_multistate_xyz(mol, frames)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".xyz", delete=False) as f:
+        f.write(xyz_content)
+        xyz_path = f.name
+
+    if gui:
+        # Open in PyMOL GUI with animation playing
+        pml_script = f"""
+load {xyz_path}, mol
+
+{_get_style_commands()}
+
+# Animation setup
+mset 1 -{total_frames}
+set movie_fps, {fps}
+set movie_loop, 1
+mplay
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pml", delete=False) as f:
+            f.write(pml_script)
+            script_path = f.name
+
+        subprocess.Popen(["pymol", script_path])
+        print(f"PyMOL opened with mode {mode_index} animation!")
+        print("Controls: mplay/mstop to play/stop, set movie_fps, N to change speed")
+        return None
+
+    else:
+        # Headless render to GIF
+        if output is None:
+            output = tempfile.NamedTemporaryFile(suffix=".gif", delete=False).name
+        output = str(Path(output).resolve())
+
+        # Create temp directory for PNG frames
+        with tempfile.TemporaryDirectory() as tmpdir:
+            frame_prefix = Path(tmpdir) / "frame"
+
+            pml_script = f"""
+load {xyz_path}, mol
+
+{_get_style_commands()}
+
+# Render each frame
+set ray_trace_frames, 1
+set cache_frames, 0
+mset 1 -{total_frames}
+orient mol
+zoom mol, buffer=2
+mpng {frame_prefix}, width={width}, height={height}
+quit
+"""
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".pml", delete=False
+            ) as f:
+                f.write(pml_script)
+                script_path = f.name
+
+            subprocess.run(["pymol", "-cq", script_path], check=True)
+
+            # Combine PNGs to GIF using imageio
+            import imageio.v3 as iio
+
+            frame_files = sorted(Path(tmpdir).glob("frame*.png"))
+            images = [iio.imread(f) for f in frame_files]
+            duration = 1000 / fps  # ms per frame
+            iio.imwrite(output, images, duration=duration, loop=0)
+
+        print(f"Rendered: {output}")
+        return output
+
+
+def _write_multistate_xyz(mol, frames):
+    """Write multi-state XYZ file from molecule and coordinate frames."""
+    n_atoms = mol.GetNumAtoms()
+    symbols = [mol.GetAtomWithIdx(i).GetSymbol() for i in range(n_atoms)]
+
+    xyz_content = ""
+    for frame_idx, coords in enumerate(frames):
+        xyz_content += f"{n_atoms}\nFrame {frame_idx}\n"
+        for sym, (x, y, z) in zip(symbols, coords):
+            xyz_content += f"{sym} {x:.6f} {y:.6f} {z:.6f}\n"
+
+    return xyz_content
 
 
 def render_molecule(
