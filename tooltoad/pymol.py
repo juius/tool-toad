@@ -140,9 +140,40 @@ quit
 
             # Combine PNGs to GIF using imageio
             import imageio.v3 as iio
+            from PIL import Image, ImageChops
 
             frame_files = sorted(Path(tmpdir).glob("frame*.png"))
-            images = [iio.imread(f) for f in frame_files]
+
+            # Find common bounding box across all frames
+            bbox = None
+            for f in frame_files:
+                img = Image.open(f).convert("RGBA")
+                # Create background and find difference
+                bg = Image.new("RGBA", img.size, (255, 255, 255, 0))
+                diff = ImageChops.difference(img, bg)
+                frame_bbox = diff.getbbox()
+                if frame_bbox:
+                    if bbox is None:
+                        bbox = frame_bbox
+                    else:
+                        bbox = (
+                            min(bbox[0], frame_bbox[0]),
+                            min(bbox[1], frame_bbox[1]),
+                            max(bbox[2], frame_bbox[2]),
+                            max(bbox[3], frame_bbox[3]),
+                        )
+
+            # Crop all frames to common bbox and convert to RGB
+            images = []
+            for f in frame_files:
+                img = Image.open(f).convert("RGBA")
+                if bbox:
+                    img = img.crop(bbox)
+                # Composite on white background for GIF
+                bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+                img = Image.alpha_composite(bg, img).convert("RGB")
+                images.append(np.array(img))
+
             duration = 1000 / fps  # ms per frame
             iio.imwrite(output, images, duration=duration, loop=0)
 
@@ -215,6 +246,10 @@ quit
         script_path = f.name
 
     subprocess.run(["pymol", "-cq", script_path], check=True)
+
+    # Autocrop whitespace
+    _autocrop_image(output)
+
     print(f"Rendered: {output}")
     return output
 
@@ -261,6 +296,9 @@ def add_dash():
     # Create selections for each atom
     name = f"dash_{{dash_count[0]}}"
     idx1, idx2 = atoms[0].id, atoms[1].id
+    # Remove existing bond
+    cmd.unbond(f"mol and id {{idx1}}", f"mol and id {{idx2}}")
+    # Add dashed bond
     cmd.distance(name, f"mol and id {{idx1}}", f"mol and id {{idx2}}")
     cmd.hide("labels", name)
     cmd.set("dash_gap", 0.15, name)
@@ -296,6 +334,9 @@ def _build_dash_commands(dashed_bonds):
         atom1, atom2 = bond[0] + 1, bond[1] + 1  # Convert to 1-based
         color = bond[2] if len(bond) > 2 else "gray50"
         commands += f"""
+# Remove existing bond between atoms
+unbond mol and id {atom1}, mol and id {atom2}
+# Add dashed bond
 distance dash_{i}, mol and id {atom1}, mol and id {atom2}
 hide labels, dash_{i}
 set dash_gap, 0.15, dash_{i}
@@ -346,5 +387,19 @@ color green, elem Cl and mol
 color orange, elem P and mol
 
 center mol
-zoom mol, buffer=2
+zoom mol, buffer=0
 """
+
+
+def _autocrop_image(filepath):
+    """Remove whitespace around an image."""
+    from PIL import Image, ImageChops
+
+    img = Image.open(filepath).convert("RGBA")
+    # Create white background and find difference
+    bg = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    diff = ImageChops.difference(img, bg)
+    bbox = diff.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    img.save(filepath)
