@@ -11,11 +11,11 @@ def render_normal_mode(
     normal_mode,
     output=None,
     amplitude=0.3,
-    n_frames=20,
+    n_frames=30,
     fps=30,
     gui=False,
-    width=1200,
-    height=900,
+    width=1800,
+    height=1350,
     ray=True,
     dashed_bonds=None,
 ):
@@ -23,21 +23,20 @@ def render_normal_mode(
 
     Args:
         mol: RDKit molecule with 3D coordinates
-        normal_modes: Normal mode displacements, shape (NModes, Natoms, 3)
-        mode_index: Which mode to visualize (0-indexed)
-        output: Output GIF path. If None and gui=False, saves to temp file.
+        normal_mode: Normal mode displacements, shape (Natoms, 3)
+        output: Output file path (.gif, .mp4, or .webm). If None, saves to temp .gif.
         amplitude: Maximum displacement amplitude in Angstroms (default 0.3)
         n_frames: Frames per half-oscillation (total frames = 2*n_frames)
         fps: Animation frames per second (default 30)
         gui: If True, open PyMOL GUI for interactive viewing
-        width: Image width in pixels (for GIF export)
-        height: Image height in pixels (for GIF export)
+        width: Image width in pixels (for animation export)
+        height: Image height in pixels (for animation export)
         ray: If True, use ray-tracing for high-quality frames (slower)
         dashed_bonds: List of tuples [(atom1_idx, atom2_idx), ...] for dashed bonds.
                       Optionally include color: [(atom1, atom2, "red"), ...]
 
     Returns:
-        Path to output GIF (if gui=False), None otherwise.
+        Path to output file (if gui=False), None otherwise.
     """
     mode = np.asarray(normal_mode)
     assert mode.shape == (mol.GetNumAtoms(), 3), "Normal mode shape must be (Natoms, 3)"
@@ -170,16 +169,34 @@ quit
                     img = img.crop(bbox)
                 images.append(img)
 
-            duration = int(1000 / fps)  # ms per frame
-            # Save with disposal=2 to clear each frame before next (prevents overlay)
-            images[0].save(
-                output,
-                save_all=True,
-                append_images=images[1:],
-                duration=duration,
-                loop=0,
-                disposal=2,  # Clear frame before rendering next
-            )
+            # Determine output format from extension
+            ext = Path(output).suffix.lower()
+
+            if ext in (".mp4", ".webm", ".mov"):
+                # Video output using imageio-ffmpeg
+                import imageio.v3 as iio
+
+                # Convert RGBA to RGB with white background for video
+                video_frames = []
+                for img in images:
+                    bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+                    composite = Image.alpha_composite(bg, img).convert("RGB")
+                    video_frames.append(np.array(composite))
+
+                iio.imwrite(output, video_frames, fps=fps, codec="libx264", quality=8)
+            else:
+                # GIF output with high-quality dithering
+                duration = int(1000 / fps)  # ms per frame
+                # Save with disposal=2 to clear each frame before next (prevents overlay)
+                images[0].save(
+                    output,
+                    save_all=True,
+                    append_images=images[1:],
+                    duration=duration,
+                    loop=0,
+                    disposal=2,  # Clear frame before rendering next
+                    optimize=False,
+                )
 
         print(f"Rendered: {output}")
         return output
