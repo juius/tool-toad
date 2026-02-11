@@ -163,15 +163,12 @@ quit
                             max(bbox[3], frame_bbox[3]),
                         )
 
-            # Crop all frames to common bbox and convert to RGB
+            # Crop all frames to common bbox, keep transparency
             images = []
             for f in frame_files:
                 img = Image.open(f).convert("RGBA")
                 if bbox:
                     img = img.crop(bbox)
-                # Composite on white background for GIF
-                bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
-                img = Image.alpha_composite(bg, img).convert("RGB")
                 images.append(np.array(img))
 
             duration = 1000 / fps  # ms per frame
