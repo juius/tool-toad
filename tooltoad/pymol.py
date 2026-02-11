@@ -11,13 +11,14 @@ def render_normal_mode(
     normal_mode,
     output=None,
     amplitude=0.3,
-    n_frames=30,
+    n_frames=20,
     fps=30,
     gui=False,
     width=1800,
     height=1350,
     ray=True,
     dashed_bonds=None,
+    fill_frame=0.85,
 ):
     """Visualize a vibrational normal mode as an oscillating animation.
 
@@ -34,6 +35,7 @@ def render_normal_mode(
         ray: If True, use ray-tracing for high-quality frames (slower)
         dashed_bonds: List of tuples [(atom1_idx, atom2_idx), ...] for dashed bonds.
                       Optionally include color: [(atom1, atom2, "red"), ...]
+        fill_frame: Fraction of frame the molecule should fill (default 0.85)
 
     Returns:
         Path to output file (if gui=False), None otherwise.
@@ -109,6 +111,11 @@ mplay
 
         # Create temp directory for PNG frames
         with tempfile.TemporaryDirectory() as tmpdir:
+            # Calculate optimal zoom using test render
+            zoom_scale = _calculate_auto_zoom(
+                xyz_path, dash_commands, width, height, fill_frame, tmpdir
+            )
+
             pml_script = f"""
 load {xyz_path}, mol
 
@@ -117,7 +124,7 @@ load {xyz_path}, mol
 {dash_commands}
 
 orient mol
-zoom mol, buffer=2
+zoom mol, {zoom_scale}
 
 # Render each frame
 python
@@ -137,37 +144,11 @@ quit
 
             subprocess.run(["pymol", "-cq", script_path], check=True)
 
-            # Combine PNGs to GIF using imageio
-            from PIL import Image, ImageChops
+            # Load rendered frames
+            from PIL import Image
 
             frame_files = sorted(Path(tmpdir).glob("frame*.png"))
-
-            # Find common bounding box across all frames
-            bbox = None
-            for f in frame_files:
-                img = Image.open(f).convert("RGBA")
-                # Create background and find difference
-                bg = Image.new("RGBA", img.size, (255, 255, 255, 0))
-                diff = ImageChops.difference(img, bg)
-                frame_bbox = diff.getbbox()
-                if frame_bbox:
-                    if bbox is None:
-                        bbox = frame_bbox
-                    else:
-                        bbox = (
-                            min(bbox[0], frame_bbox[0]),
-                            min(bbox[1], frame_bbox[1]),
-                            max(bbox[2], frame_bbox[2]),
-                            max(bbox[3], frame_bbox[3]),
-                        )
-
-            # Crop all frames to common bbox, keep transparency
-            images = []
-            for f in frame_files:
-                img = Image.open(f).convert("RGBA")
-                if bbox:
-                    img = img.crop(bbox)
-                images.append(img)
+            images = [Image.open(f).convert("RGBA") for f in frame_files]
 
             # Determine output format from extension
             ext = Path(output).suffix.lower()
@@ -216,8 +197,68 @@ def _write_multistate_xyz(mol, frames):
     return xyz_content
 
 
+def _calculate_auto_zoom(xyz_path, dash_commands, width, height, fill_frame, tmpdir):
+    """Calculate optimal zoom scale to fill frame with molecule.
+
+    Does a quick low-res test render, measures molecule extent, and
+    calculates the zoom scale needed for the molecule to fill the target
+    fraction of the frame.
+    """
+    from PIL import Image, ImageChops
+
+    test_w, test_h = 400, 300
+    test_img = Path(tmpdir) / "test_zoom.png"
+
+    # Quick test render without ray-tracing
+    test_script = f"""
+load {xyz_path}, mol
+{_get_style_commands()}
+{dash_commands}
+orient mol
+zoom mol, 1.0
+png {test_img}, width={test_w}, height={test_h}
+quit
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".pml", delete=False) as f:
+        f.write(test_script)
+        test_script_path = f.name
+
+    subprocess.run(["pymol", "-cq", test_script_path], check=True, capture_output=True)
+
+    # Measure molecule bounding box in test image
+    img = Image.open(test_img).convert("RGBA")
+    bg = Image.new("RGBA", img.size, (255, 255, 255, 0))
+    diff = ImageChops.difference(img, bg)
+    bbox = diff.getbbox()
+
+    if not bbox:
+        return 1.0  # Fallback if detection fails
+
+    # Calculate current molecule extent as fraction of frame
+    mol_w = bbox[2] - bbox[0]
+    mol_h = bbox[3] - bbox[1]
+    current_fill_w = mol_w / test_w
+    current_fill_h = mol_h / test_h
+    current_fill = max(current_fill_w, current_fill_h)
+
+    # Calculate zoom scale to achieve target fill
+    # zoom scale > 1 zooms in, < 1 zooms out
+    if current_fill > 0:
+        zoom_scale = fill_frame / current_fill
+    else:
+        zoom_scale = 1.0
+
+    return zoom_scale
+
+
 def render_molecule(
-    mol, output=None, dashed_bonds=None, width=2400, height=1800, dpi=300
+    mol,
+    output=None,
+    dashed_bonds=None,
+    width=2400,
+    height=1800,
+    dpi=300,
+    fill_frame=0.85,
 ):
     """Render molecule to PNG file without opening GUI.
 
@@ -229,6 +270,7 @@ def render_molecule(
         width: Image width in pixels (default 2400)
         height: Image height in pixels (default 1800)
         dpi: Image DPI (default 300)
+        fill_frame: Fraction of frame the molecule should fill (default 0.85)
 
     Returns:
         Path to the rendered PNG file.
@@ -245,6 +287,12 @@ def render_molecule(
     # Build dashed bond commands
     dash_commands = _build_dash_commands(dashed_bonds)
 
+    # Calculate optimal zoom using test render
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zoom_scale = _calculate_auto_zoom(
+            sdf_path, dash_commands, width, height, fill_frame, tmpdir
+        )
+
     # Create PyMOL script for headless rendering
     pml_script = f"""
 load {sdf_path}, mol
@@ -255,7 +303,7 @@ load {sdf_path}, mol
 
 # Orient molecule optimally and render
 orient mol
-zoom mol, buffer=2
+zoom mol, {zoom_scale}
 ray {width}, {height}
 png {output}, dpi={dpi}
 quit
@@ -267,9 +315,6 @@ quit
         script_path = f.name
 
     subprocess.run(["pymol", "-cq", script_path], check=True)
-
-    # Autocrop whitespace
-    _autocrop_image(output)
 
     print(f"Rendered: {output}")
     return output
@@ -410,17 +455,3 @@ color orange, elem P and mol
 center mol
 zoom mol, buffer=0
 """
-
-
-def _autocrop_image(filepath):
-    """Remove whitespace around an image."""
-    from PIL import Image, ImageChops
-
-    img = Image.open(filepath).convert("RGBA")
-    # Create white background and find difference
-    bg = Image.new("RGBA", img.size, (255, 255, 255, 0))
-    diff = ImageChops.difference(img, bg)
-    bbox = diff.getbbox()
-    if bbox:
-        img = img.crop(bbox)
-    img.save(filepath)
