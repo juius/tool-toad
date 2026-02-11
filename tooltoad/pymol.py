@@ -139,7 +139,6 @@ quit
             subprocess.run(["pymol", "-cq", script_path], check=True)
 
             # Combine PNGs to GIF using imageio
-            import imageio.v3 as iio
             from PIL import Image, ImageChops
 
             frame_files = sorted(Path(tmpdir).glob("frame*.png"))
@@ -169,10 +168,18 @@ quit
                 img = Image.open(f).convert("RGBA")
                 if bbox:
                     img = img.crop(bbox)
-                images.append(np.array(img))
+                images.append(img)
 
-            duration = 1000 / fps  # ms per frame
-            iio.imwrite(output, images, duration=duration, loop=0)
+            duration = int(1000 / fps)  # ms per frame
+            # Save with disposal=2 to clear each frame before next (prevents overlay)
+            images[0].save(
+                output,
+                save_all=True,
+                append_images=images[1:],
+                duration=duration,
+                loop=0,
+                disposal=2,  # Clear frame before rendering next
+            )
 
         print(f"Rendered: {output}")
         return output
