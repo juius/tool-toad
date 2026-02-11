@@ -8,15 +8,16 @@ from rdkit import Chem
 
 def render_normal_mode(
     mol,
-    normal_modes,
-    mode_index=0,
+    normal_mode,
     output=None,
     amplitude=0.3,
     n_frames=20,
     fps=30,
     gui=False,
-    width=800,
-    height=600,
+    width=1200,
+    height=900,
+    ray=True,
+    dashed_bonds=None,
 ):
     """Visualize a vibrational normal mode as an oscillating animation.
 
@@ -31,12 +32,15 @@ def render_normal_mode(
         gui: If True, open PyMOL GUI for interactive viewing
         width: Image width in pixels (for GIF export)
         height: Image height in pixels (for GIF export)
+        ray: If True, use ray-tracing for high-quality frames (slower)
+        dashed_bonds: List of tuples [(atom1_idx, atom2_idx), ...] for dashed bonds.
+                      Optionally include color: [(atom1, atom2, "red"), ...]
 
     Returns:
         Path to output GIF (if gui=False), None otherwise.
     """
-    normal_modes = np.asarray(normal_modes)
-    mode = normal_modes[mode_index]
+    mode = np.asarray(normal_mode)
+    assert mode.shape == (mol.GetNumAtoms(), 3), "Normal mode shape must be (Natoms, 3)"
 
     # Normalize mode vector and scale by amplitude
     norm = np.linalg.norm(mode)
@@ -71,12 +75,17 @@ def render_normal_mode(
         f.write(xyz_content)
         xyz_path = f.name
 
+    # Build dashed bond commands
+    dash_commands = _build_dash_commands(dashed_bonds)
+
     if gui:
         # Open in PyMOL GUI with animation playing
         pml_script = f"""
 load {xyz_path}, mol
 
 {_get_style_commands()}
+
+{dash_commands}
 
 # Animation setup
 mset 1 -{total_frames}
@@ -89,7 +98,7 @@ mplay
             script_path = f.name
 
         subprocess.Popen(["pymol", script_path])
-        print(f"PyMOL opened with mode {mode_index} animation!")
+        print("PyMOL opened with normal mode animation!")
         print("Controls: mplay/mstop to play/stop, set movie_fps, N to change speed")
         return None
 
@@ -101,20 +110,24 @@ mplay
 
         # Create temp directory for PNG frames
         with tempfile.TemporaryDirectory() as tmpdir:
-            frame_prefix = Path(tmpdir) / "frame"
-
             pml_script = f"""
 load {xyz_path}, mol
 
 {_get_style_commands()}
 
-# Render each frame
-set ray_trace_frames, 1
-set cache_frames, 0
-mset 1 -{total_frames}
+{dash_commands}
+
 orient mol
 zoom mol, buffer=2
-mpng {frame_prefix}, width={width}, height={height}
+
+# Render each frame
+python
+import os
+for state in range(1, {total_frames + 1}):
+    cmd.frame(state)
+    {"cmd.ray({}, {})".format(width, height) if ray else ""}
+    cmd.png(os.path.join("{tmpdir}", f"frame{{state:04d}}.png"), width={width}, height={height}, dpi=150)
+python end
 quit
 """
             with tempfile.NamedTemporaryFile(
